@@ -1,8 +1,10 @@
 #include "BeeMesh.hpp"
 
+#include "Hive.hpp"
+
 #include <print>
 
-const char *BANNER_STR = R"(""
+const char *BANNER_STR = R"(
 ______            ___  ___          _
 | ___ \           |  \/  |         | |
 | |_/ / ___  ___  | .  . | ___  ___| |__
@@ -20,6 +22,8 @@ BeeMesh - Distributed Volunteer Computing Framework
 BeeMesh::BeeMesh(const argparse::ArgumentParser &argparser)
 {
     parse_args(argparser);
+
+    run();
 }
 
 BeeMesh::~BeeMesh() {}
@@ -27,22 +31,22 @@ BeeMesh::~BeeMesh() {}
 void
 BeeMesh::parse_args(const argparse::ArgumentParser &argparser)
 {
-    if (argparser.is_used("--monitor"))
+    if (argparser.is_subcommand_used("monitor"))
     {
         m_mode = Mode::Monitor;
     }
 
-    else if (argparser.is_used("--launch"))
+    else if (argparser.is_subcommand_used("launch"))
     {
         m_mode = Mode::Launch;
     }
 
-    else if (argparser.is_used("--hive"))
+    else if (argparser.is_subcommand_used("hive"))
     {
         m_mode = Mode::Hive;
     }
 
-    else if (argparser.is_used("--bee"))
+    else if (argparser.is_subcommand_used("bee"))
     {
         m_mode = Mode::Bee;
     }
@@ -56,7 +60,7 @@ BeeMesh::parse_args(const argparse::ArgumentParser &argparser)
 
     if (argparser.is_used("--port"))
     {
-        m_port = argparser.get<std::string>("--port");
+        m_port = argparser.get<uint16_t>("--port");
     }
 
     if (argparser.is_used("--host"))
@@ -64,13 +68,58 @@ BeeMesh::parse_args(const argparse::ArgumentParser &argparser)
         m_host = argparser.get<std::string>("--host");
     }
 
-    if (argparser.is_used("--hive-url"))
-    {
-        m_hive_url = argparser.get<std::string>("--hive-url");
-    }
-
     if (argparser.is_used("--auth-token"))
     {
         m_auth_token = argparser.get<std::string>("--auth-token");
     }
+}
+
+void
+BeeMesh::run()
+{
+    std::println("{}", BANNER_STR);
+
+    switch (m_mode)
+    {
+        case Mode::Hive:
+            start_hive_mode();
+            break;
+
+        case Mode::Monitor:
+            start_monitor_mode();
+            break;
+
+        case Mode::Launch:
+            start_launch_mode();
+            break;
+
+        case Mode::Bee:
+            start_bee_mode();
+            break;
+
+        default:
+            break;
+    }
+}
+
+void
+BeeMesh::start_hive_mode()
+{
+    Hive hive(m_auth_token, {m_host, m_port});
+    hive.run();
+}
+
+void
+BeeMesh::start_bee_mode()
+{
+}
+
+void
+BeeMesh::start_monitor_mode()
+{
+}
+
+void
+BeeMesh::start_launch_mode()
+{
 }

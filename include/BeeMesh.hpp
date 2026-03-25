@@ -2,6 +2,7 @@
 
 #include <argparse.hpp>
 #include <asio.hpp>
+#include <cstdint>
 
 class BeeMesh
 {
@@ -19,12 +20,22 @@ public:
     };
 
 private:
+    void run();
     void parse_args(const argparse::ArgumentParser &argparser);
+    void start_hive_mode();
+    void start_bee_mode();
+    void start_monitor_mode();
+    void start_launch_mode();
 
-    std::string m_port;
-    std::string m_host;
-    std::string m_hive_url;
-    std::string m_auth_token;
-
+private:
     Mode m_mode = Mode::None;
+
+    // ASIO components for network communication
+    asio::io_context m_io_context;
+    asio::ip::tcp::acceptor m_tcp_acceptor{m_io_context};
+
+    // Default values for network configuration
+    uint16_t m_port{8080};
+    std::string m_host{"localhost"};
+    std::string m_auth_token;
 };
