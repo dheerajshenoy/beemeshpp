@@ -4,7 +4,7 @@
 // Each Job can be executed by a Bee and may contain data, instructions, or
 // tasks that need to be performed.
 
-// Job = id + data (basically)
+// Job = id + data
 // Data - command or file to execute
 
 #include <cstdint>
@@ -17,15 +17,6 @@ class Job
 public:
     Job(JobId id, const std::string &data);
     ~Job();
-
-    enum class Status
-    {
-        None = 0,
-        Pending,
-        InProgress,
-        Completed,
-        Failed
-    };
 
     inline JobId id() const
     {
@@ -42,18 +33,7 @@ public:
         return m_data;
     }
 
-    inline void set_status(Status status)
-    {
-        m_status = status;
-    }
-
-    inline Status status() const
-    {
-        return m_status;
-    }
-
 private:
     JobId m_id;
     std::string m_data;
-    Status m_status{Status::None};
 };

@@ -4,6 +4,7 @@
 #include "argparse.hpp"
 
 #include <asio.hpp>
+#include <nlohmann/json.hpp>
 
 class BeeMesh
 {

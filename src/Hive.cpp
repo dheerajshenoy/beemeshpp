@@ -1,9 +1,8 @@
 #include "Hive.hpp"
 
-#include "Protocol.hpp"
-
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <print>
 
 Hive::Hive(asio::io_context &io_context, const std::string &auth_token,
@@ -70,35 +69,48 @@ Hive::do_accept()
 void
 Hive::handle_connection(asio::ip::tcp::socket socket)
 {
-    try
+    struct Context
     {
-        std::string buffer;
-        std::size_t read_bytes;
+        asio::ip::tcp::socket sock;
+        asio::streambuf buffer;
+        Context(asio::ip::tcp::socket s) : sock(std::move(s)) {}
+    };
 
-        asio::async_read(socket, asio::buffer(buffer),
-                         [&](const std::error_code &ec, std::size_t len)
-        {
-            if (ec)
-            {
-                // TODO: Error handling
-            }
-            else
-            {
-            }
-        });
-    }
-    catch (const std::exception &e)
+    auto ctx = std::make_shared<Context>(std::move(socket));
+
+    asio::async_read_until(ctx->sock, ctx->buffer, "\n",
+                           [this, ctx](const std::error_code &ec, std::size_t)
     {
-        std::cerr << "Error reading from connection: " << e.what() << "\n";
-    }
+        if (!ec)
+        {
+            std::istream is(&ctx->buffer);
+            std::string line;
+            std::getline(is, line);
+
+            auto json = nlohmann::json::parse(line);
+            if (json["msg_type"] == "bee")
+            {
+                // Cleanly move the socket out of the context and into the Bee
+                add_bee(std::move(ctx->sock), json["payload"]);
+            }
+        }
+    });
 }
 
 void
-Hive::add_bee(asio::ip::tcp::socket socket)
+Hive::add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info)
 {
     static BeeId bee_id = 0;
     BeeId next_bee_id   = bee_id++;
-    std::make_shared<Bee>(std::move(socket), next_bee_id, this)->run();
+
+    auto bee = std::make_shared<Bee>(std::move(socket), next_bee_id, this);
+
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        m_bees.push_back(bee);
+    }
+
+    bee->run();
 }
 
 void
@@ -107,4 +119,26 @@ Hive::add_job(std::unique_ptr<Job> job)
     std::lock_guard<std::mutex> lock(m_jobs_mutex);
     m_pending_jobs_queue.push(job->id());
     m_all_jobs.push_back(std::move(job));
+}
+
+void
+Hive::broadcast_payload(BroadcastType type, BeeId sender_id,
+                        const std::string &payload)
+{
+    switch (type)
+    {
+        case BroadcastType::StatusUpdate:
+        {
+            std::println("Hive broadcasting payload from Bee {}: {}", sender_id,
+                         payload);
+        }
+        break;
+
+        case BroadcastType::JobResult:
+        {
+            std::println("Hive broadcasting job result from Bee {}: {}",
+                         sender_id, payload);
+        }
+        break;
+    }
 }

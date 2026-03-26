@@ -6,9 +6,16 @@
 
 #include <asio.hpp>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <queue>
 
-using BeeList = std::vector<std::unique_ptr<Bee>>;
+enum class BroadcastType
+{
+    StatusUpdate = 0,
+    JobResult
+};
+
+using BeeList = std::vector<std::shared_ptr<Bee>>;
 
 class Hive
 {
@@ -27,11 +34,11 @@ public:
     }
 
     void add_job(std::unique_ptr<Job> job);
-    void broadcast_payload(MessageType type, const std::string &data,
-                           BeeId sender_id);
+    void broadcast_payload(BroadcastType type, BeeId sender_id,
+                           const std::string &payload);
 
 private:
-    void add_bee(asio::ip::tcp::socket socket);
+    void add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info);
     void handle_connection(asio::ip::tcp::socket socket);
     void do_accept();
 

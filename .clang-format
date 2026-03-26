@@ -22,7 +22,7 @@ AlignConsecutiveDeclarations: false
 AlignTrailingComments: true
 
 Cpp11BracedListStyle: true
-
+NamespaceIndentation: All
 AllowShortLambdasOnASingleLine: Inline
 LambdaBodyIndentation: OuterScope
 SpacesInAngles: false

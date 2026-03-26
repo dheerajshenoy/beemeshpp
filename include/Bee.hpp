@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Job.hpp"
-#include "Protocol.hpp"
 
 #include <asio.hpp>
 #include <cstdint>
@@ -15,12 +14,25 @@ class Hive;
 class Bee : public std::enable_shared_from_this<Bee>
 {
 public:
-    Bee(tcp::socket socket, BeeId id, Hive *hive);
+    Bee(tcp::socket socket, BeeId id, Job job, Hive *hive);
     ~Bee();
 
     // Prevent copying to protect the socket resource
     Bee(const Bee &)            = delete;
     Bee &operator=(const Bee &) = delete;
+
+    enum class Status
+    {
+        Idle,
+        Running,
+        Completed,
+        Failed
+    };
+
+    inline Status status() const
+    {
+        return m_status;
+    }
 
     inline BeeId id() const
     {
@@ -39,7 +51,9 @@ private:
 
 private:
     BeeId m_id;
+    Job m_job;
     std::string m_name;
     asio::ip::tcp::socket m_socket;
     Hive *m_hive;
+    Status m_status{Status::Idle};
 };
