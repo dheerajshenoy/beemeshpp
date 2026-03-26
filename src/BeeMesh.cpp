@@ -2,7 +2,15 @@
 
 #include "Hive.hpp"
 
+#include <iostream>
+#include <nlohmann/json.hpp>
 #include <print>
+
+#if defined(_WIN32)
+    #include <windows.h>
+#elif defined(__linux__) || defined(__APPLE__)
+    #include <unistd.h>
+#endif
 
 const char *BANNER_STR = R"(
 ______            ___  ___          _
@@ -19,107 +27,73 @@ ______            ___  ___          _
 BeeMesh - Distributed Volunteer Computing Framework
 )";
 
-BeeMesh::BeeMesh(const argparse::ArgumentParser &argparser)
-{
-    parse_args(argparser);
+BeeMesh::BeeMesh() {}
 
-    run();
+BeeMesh::~BeeMesh()
+{
+    m_io_context.stop();
+    std::println("BeeMesh is shutting down...");
 }
 
-BeeMesh::~BeeMesh() {}
+void
+BeeMesh::start_hive_mode(const argparse::ArgumentParser &argparser)
+{
+    std::string auth_token = argparser.get<std::string>("--auth-token");
+    std::string host       = argparser.get<std::string>("--host");
+    Port port              = argparser.get<Port>("--port");
+
+    auto hive = std::make_shared<Hive>(m_io_context, auth_token,
+                                       Endpoint{host, port});
+    hive->run();
+
+    m_io_context.run();
+}
 
 void
-BeeMesh::parse_args(const argparse::ArgumentParser &argparser)
+BeeMesh::start_bee_mode(const argparse::ArgumentParser &argparser)
 {
-    if (argparser.is_subcommand_used("monitor"))
+    auto host = argparser.get<std::string>("--host");
+    auto port = argparser.get<Port>("--port");
+
+    asio::ip::tcp::socket socket(m_io_context);
+    asio::ip::tcp::resolver resolver(m_io_context);
+
+    try
     {
-        m_mode = Mode::Monitor;
+        asio::connect(socket, resolver.resolve(host, std::to_string(port)));
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error in connection: " << e.what();
     }
 
-    else if (argparser.is_subcommand_used("launch"))
     {
-        m_mode = Mode::Launch;
-    }
-
-    else if (argparser.is_subcommand_used("hive"))
-    {
-        m_mode = Mode::Hive;
-    }
-
-    else if (argparser.is_subcommand_used("bee"))
-    {
-        m_mode = Mode::Bee;
-    }
-
-    if (m_mode == Mode::None)
-    {
-        std::string info_str
-            = "No mode specified. Use --monitor, --launch, --hive, or --bee.";
-        std::println("{}", info_str);
-    }
-
-    if (argparser.is_used("--port"))
-    {
-        m_port = argparser.get<uint16_t>("--port");
-    }
-
-    if (argparser.is_used("--host"))
-    {
-        m_host = argparser.get<std::string>("--host");
-    }
-
-    if (argparser.is_used("--auth-token"))
-    {
-        m_auth_token = argparser.get<std::string>("--auth-token");
+        nlohmann::json j;
+        j["host-info"] = host_name;
     }
 }
 
 void
-BeeMesh::run()
+BeeMesh::start_launch_mode(const argparse::ArgumentParser &argparser)
 {
-    std::println("{}", BANNER_STR);
+    auto host    = argparser.get<std::string>("--host");
+    auto port    = argparser.get<Port>("--port");
+    auto payload = argparser.get<std::string>("--payload");
 
-    switch (m_mode)
+    asio::ip::tcp::socket socket(m_io_context);
+    asio::ip::tcp::resolver resolver(m_io_context);
+
+    try
     {
-        case Mode::Hive:
-            start_hive_mode();
-            break;
-
-        case Mode::Monitor:
-            start_monitor_mode();
-            break;
-
-        case Mode::Launch:
-            start_launch_mode();
-            break;
-
-        case Mode::Bee:
-            start_bee_mode();
-            break;
-
-        default:
-            break;
+        asio::connect(socket, resolver.resolve(host, std::to_string(port)));
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error in connection: " << e.what();
     }
 }
 
 void
-BeeMesh::start_hive_mode()
-{
-    Hive hive(m_auth_token, {m_host, m_port});
-    hive.run();
-}
-
-void
-BeeMesh::start_bee_mode()
-{
-}
-
-void
-BeeMesh::start_monitor_mode()
-{
-}
-
-void
-BeeMesh::start_launch_mode()
+BeeMesh::start_monitor_mode(const argparse::ArgumentParser &argparser)
 {
 }

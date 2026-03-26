@@ -1,4 +1,5 @@
 #include "BeeMesh.hpp"
+#include "Endpoint.hpp"
 #include "argparse.hpp"
 
 #include <print>
@@ -13,41 +14,93 @@ main(int argc, char *argv[])
         .help("Increase output verbosity")
         .flag();
 
-    parser.add_argument("--port")
-        .help("Port number to listen on when running in hive mode (default: "
-              "8080) or connect to when running in bee mode")
-        .nargs(1)
-        .scan<'d', uint16_t>()
-        .metavar("PORT");
-
-    parser.add_argument("--host")
-        .help("Hostname or IP address to bind to when running in hive mode or "
-              "connect to when running in bee mode"
-              "(default: 127.0.0.1)")
-        .nargs(1)
-        .metavar("HOST");
-
-    parser.add_argument("--auth-token")
-        .help("Authentication token for connecting to the hive")
-        .nargs(1)
-        .metavar("TOKEN");
-
     argparse::ArgumentParser monitor_command("monitor");
     monitor_command.add_description(
         "Monitor the BeeMesh network and display status information");
 
+    monitor_command.add_argument("--host")
+        .help("Hostname or IP address for the monitor to bind to")
+        .nargs(1)
+        .default_value("localhost")
+        .metavar("HOST");
+
+    monitor_command.add_argument("--port")
+        .help("Port number for the monitor to listen on")
+        .default_value(Port{8080})
+        .nargs(1)
+        .scan<'u', Port>()
+        .metavar("PORT");
+
     argparse::ArgumentParser launch_command("launch");
     launch_command.add_description("Launch provided command or executable in "
                                    "the BeeMesh network");
+
+    launch_command.add_argument("--host")
+        .help("Hostname or IP address for the launch command to connect to the "
+              "hive")
+        .default_value("localhost")
+        .nargs(1)
+        .metavar("HOST");
+
+    launch_command.add_argument("--port")
+        .help("Port number for the launch command to connect to the hive")
+        .default_value(Port{8080})
+        .nargs(1)
+        .scan<'u', Port>()
+        .metavar("PORT");
+
+    launch_command.add_argument("--payload")
+        .help("Command or executable to run in the BeeMesh network")
+        .default_value("echo 'Hello, BeeMesh!'")
+        .nargs(1)
+        .metavar("PAYLOAD");
 
     argparse::ArgumentParser hive_command("hive");
     hive_command.add_description("Start BeeMesh in hive mode, allowing other "
                                  "nodes to connect and "
                                  "execute tasks");
 
+    hive_command.add_argument("--port")
+        .help("Port number for the hive to listen on")
+        .default_value(Port{8080})
+        .nargs(1)
+        .scan<'u', Port>()
+        .metavar("PORT");
+
+    hive_command.add_argument("--host")
+        .help("Hostname or IP address for the hive to bind to")
+        .default_value("localhost")
+        .nargs(1)
+        .metavar("HOST");
+
+    hive_command.add_argument("--auth-token")
+        .help("Authentication token for connecting bees to the hive")
+        .default_value("default_token")
+        .nargs(1)
+        .metavar("TOKEN");
+
     argparse::ArgumentParser bee_command("bee");
     bee_command.add_description(
         "Start BeeMesh in bee mode assigned by the hive");
+
+    bee_command.add_argument("--host")
+        .help("Hostname or IP address of the hive to connect to")
+        .default_value("localhost")
+        .nargs(1)
+        .metavar("HOST");
+
+    bee_command.add_argument("--port")
+        .help("Port number for the bee to connect to the hive")
+        .default_value(Port{8080})
+        .nargs(1)
+        .scan<'u', Port>()
+        .metavar("PORT");
+
+    bee_command.add_argument("--auth-token")
+        .help("Authentication token for connecting to the hive")
+        .default_value("default_token")
+        .nargs(1)
+        .metavar("TOKEN");
 
     parser.add_subparser(monitor_command);
     parser.add_subparser(launch_command);
@@ -70,7 +123,24 @@ main(int argc, char *argv[])
         return 1;
     }
 
-    BeeMesh beemesh(parser);
+    BeeMesh beemesh;
+
+    if (parser.is_subcommand_used("monitor"))
+    {
+        beemesh.start_monitor_mode(monitor_command);
+    }
+    else if (parser.is_subcommand_used("launch"))
+    {
+        beemesh.start_launch_mode(launch_command);
+    }
+    else if (parser.is_subcommand_used("hive"))
+    {
+        beemesh.start_hive_mode(hive_command);
+    }
+    else if (parser.is_subcommand_used("bee"))
+    {
+        beemesh.start_bee_mode(bee_command);
+    }
 
     return 0;
 }

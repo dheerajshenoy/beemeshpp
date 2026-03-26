@@ -13,10 +13,10 @@ add_library(asio INTERFACE)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/BeeMesh.cpp
     src/Job.cpp
     src/Hive.cpp
     src/Bee.cpp
+    src/BeeMesh.cpp
 )
 
 target_compile_options(${PROJECT_NAME}

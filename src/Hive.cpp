@@ -1,61 +1,110 @@
 #include "Hive.hpp"
 
-#include <iostream>
-#include <print>
-#include <thread>
+#include "Protocol.hpp"
 
-Hive::Hive(const std::string &auth_token, const Endpoint &endpoint)
-    : m_auth_token(auth_token), m_endpoint(endpoint)
+#include <iostream>
+#include <memory>
+#include <print>
+
+Hive::Hive(asio::io_context &io_context, const std::string &auth_token,
+           const Endpoint &endpoint)
+    : m_auth_token(auth_token), m_endpoint(endpoint), m_io_context(io_context),
+      m_acceptor(io_context)
 {
+    try
+    {
+        // Convert host string to ASIO address
+        tcp::resolver resolver(io_context);
+        auto results = resolver.resolve(m_endpoint.host,
+                                        std::to_string(m_endpoint.port));
+
+        tcp::endpoint ep = *results.begin(); // take the first resolved endpoint
+
+        m_acceptor.open(ep.protocol());
+        m_acceptor.set_option(tcp::acceptor::reuse_address(true));
+        m_acceptor.bind(ep);
+        m_acceptor.listen();
+
+        std::println("Hive listening on {}:{}", m_endpoint.host,
+                     m_endpoint.port);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Failed to start Hive acceptor: " << e.what();
+        throw;
+    }
 }
 
 Hive::~Hive()
 {
-    m_io_context.stop();
     std::println("Hive is shutting down...");
 }
 
 void
 Hive::run()
 {
+    do_accept();
+}
+
+void
+Hive::do_accept()
+{
     using asio::ip::tcp;
 
-    tcp::acceptor acceptor(m_io_context,
-                           tcp::endpoint(tcp::v4(), m_endpoint.port));
-
-    std::println("Hive is running on {}:{}", m_endpoint.host, m_endpoint.port);
-
-    while (true)
+    m_acceptor.async_accept(
+        [this](const std::error_code &ec, tcp::socket socket)
     {
-        tcp::socket socket(m_io_context);
-        acceptor.accept(socket);
-
-        // Handle the connection in a separate thread
-        std::thread([this, socket = std::move(socket)]() mutable
+        if (ec)
         {
-            try
-            {
-                handle_connection(std::move(socket));
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "Error handling connection: " << e.what()
-                          << std::endl;
-            }
-        }).detach();
-    }
-    // m_io_context = asio::io_context();
+            // TODO: Error handling
+        }
+        else
+        {
+            handle_connection(std::move(socket));
+        }
+
+        do_accept();
+    });
 }
 
 void
 Hive::handle_connection(asio::ip::tcp::socket socket)
 {
-    // Placeholder for handling the connection
-    // You can read/write to the socket here
-    std::println("Handling connection from {}:{}",
-                 socket.remote_endpoint().address().to_string(),
-                 socket.remote_endpoint().port());
+    try
+    {
+        std::string buffer;
+        std::size_t read_bytes;
 
-    // For demonstration, we'll just close the connection immediately
-    socket.close();
+        asio::async_read(socket, asio::buffer(buffer),
+                         [&](const std::error_code &ec, std::size_t len)
+        {
+            if (ec)
+            {
+                // TODO: Error handling
+            }
+            else
+            {
+            }
+        });
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error reading from connection: " << e.what() << "\n";
+    }
+}
+
+void
+Hive::add_bee(asio::ip::tcp::socket socket)
+{
+    static BeeId bee_id = 0;
+    BeeId next_bee_id   = bee_id++;
+    std::make_shared<Bee>(std::move(socket), next_bee_id, this)->run();
+}
+
+void
+Hive::add_job(std::unique_ptr<Job> job)
+{
+    std::lock_guard<std::mutex> lock(m_jobs_mutex);
+    m_pending_jobs_queue.push(job->id());
+    m_all_jobs.push_back(std::move(job));
 }
