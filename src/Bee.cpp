@@ -4,8 +4,8 @@
 
 #include <print>
 
-Bee::Bee(asio::ip::tcp::socket socket, BeeId id, Job job, Hive *hive)
-    : m_socket(std::move(socket)), m_id(id), m_hive(hive), m_job(job)
+Bee::Bee(asio::ip::tcp::socket socket, BeeId id, Hive *hive)
+    : m_socket(std::move(socket)), m_id(id), m_hive(hive)
 {
     m_name = "Bee-" + std::to_string(m_id);
 }

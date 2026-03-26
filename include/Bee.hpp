@@ -14,7 +14,7 @@ class Hive;
 class Bee : public std::enable_shared_from_this<Bee>
 {
 public:
-    Bee(tcp::socket socket, BeeId id, Job job, Hive *hive);
+    Bee(tcp::socket socket, BeeId id, Hive *hive);
     ~Bee();
 
     // Prevent copying to protect the socket resource
@@ -48,10 +48,10 @@ public:
 
 private:
     void do_send_status();
+    void start_job_execution();
 
 private:
     BeeId m_id;
-    Job m_job;
     std::string m_name;
     asio::ip::tcp::socket m_socket;
     Hive *m_hive;
