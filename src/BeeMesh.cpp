@@ -49,68 +49,19 @@ BeeMesh::start_hive_mode(const argparse::ArgumentParser &argparser)
     m_io_context.run();
 }
 
-// void
-// BeeMesh::start_bee_mode(const argparse::ArgumentParser &argparser)
-// {
-//     auto host = argparser.get<std::string>("--host");
-//     auto port = argparser.get<Port>("--port");
-
-//     // Keep the socket alive using a shared_ptr
-//     auto socket   = std::make_shared<asio::ip::tcp::socket>(m_io_context);
-//     auto resolver = std::make_shared<asio::ip::tcp::resolver>(m_io_context);
-
-//     try
-//     {
-//         asio::connect(*socket, resolver->resolve(host,
-//         std::to_string(port)));
-//     }
-//     catch (const std::exception &e)
-//     {
-//         std::cerr << "Error in connection: " << e.what() << "\n";
-//         return;
-//     }
-
-//     // Get the host info
-//     nlohmann::json json;
-
-//     HostInfo hinfo   = Utils::get_host_info();
-//     json["msg_type"] = "bee";
-//     json["payload"]  = hinfo;
-
-//     asio::async_write(
-//         *socket,
-//         asio::buffer(json.dump() + "\n"), // Add newline as a message
-//         delimiter
-//                                           // for the Hive to read until
-//         [socket](const std::error_code &ec, std::size_t bytes_transferred)
-//     {
-//         if (ec)
-//         {
-//             std::cerr << "Async write failed: " << ec.message() << "\n";
-//         }
-//         else
-//         {
-//             std::cout << "Sent " << bytes_transferred << " bytes\n";
-//         }
-//     });
-
-//     m_io_context.run();
-// }
-
 void
 BeeMesh::start_bee_mode(const argparse::ArgumentParser &argparser)
 {
     auto host = argparser.get<std::string>("--host");
     auto port = argparser.get<Port>("--port");
 
-    auto socket   = std::make_shared<asio::ip::tcp::socket>(m_io_context);
-    auto resolver = std::make_shared<asio::ip::tcp::resolver>(m_io_context);
+    auto socket   = std::make_shared<tcp::socket>(m_io_context);
+    auto resolver = std::make_shared<tcp::resolver>(m_io_context);
 
     // Resolve endpoint asynchronously
-    resolver->async_resolve(
-        host, std::to_string(port),
-        [this, socket](const std::error_code &ec,
-                       asio::ip::tcp::resolver::results_type results)
+    resolver->async_resolve(host, std::to_string(port),
+                            [this, socket](const std::error_code &ec,
+                                           tcp::resolver::results_type results)
     {
         if (ec)
         {
@@ -119,9 +70,9 @@ BeeMesh::start_bee_mode(const argparse::ArgumentParser &argparser)
         }
 
         // Connect asynchronously
-        asio::async_connect(*socket, results,
-                            [this, socket](const std::error_code &ec,
-                                           const asio::ip::tcp::endpoint &)
+        asio::async_connect(
+            *socket, results,
+            [this, socket](const std::error_code &ec, const tcp::endpoint &)
         {
             if (ec)
             {
@@ -129,31 +80,58 @@ BeeMesh::start_bee_mode(const argparse::ArgumentParser &argparser)
                 return;
             }
 
-            // Build JSON message
-            HostInfo hinfo = Utils::get_host_info();
-            nlohmann::json json;
-            json["msg_type"] = "bee";
-            json["payload"]  = hinfo;
-            std::string msg  = json.dump() + "\n"; // delimiter
+            send_device_registration(socket);
 
-            // Async write
-            asio::async_write(*socket, asio::buffer(msg),
-                              [socket](const std::error_code &ec,
-                                       std::size_t bytes_transferred)
-            {
-                if (ec)
-                {
-                    std::cerr << "Async write failed: " << ec.message() << "\n";
-                }
-                else
-                {
-                    std::cout << "Sent " << bytes_transferred << " bytes\n";
-                }
-            });
+            auto buffer = std::make_shared<asio::streambuf>();
+            do_client_read_loop(socket, buffer);
         });
     });
 
     m_io_context.run();
+}
+
+void
+BeeMesh::send_device_registration(std::shared_ptr<tcp::socket> socket)
+{
+    // Build JSON message
+    HostInfo hinfo = Utils::get_host_info();
+    nlohmann::json json;
+    json["msg_type"] = "bee";
+    json["payload"]  = hinfo;
+    std::string msg  = json.dump() + "\n"; // delimiter
+
+    // Async write
+    asio::async_write(
+        *socket, asio::buffer(msg),
+        [socket](const std::error_code &ec, std::size_t bytes_transferred)
+    {
+        if (ec)
+        {
+            std::cerr << "Async write failed: " << ec.message() << "\n";
+        }
+        else
+        {
+            std::cout << "Sent " << bytes_transferred << " bytes\n";
+        }
+    });
+}
+
+void
+BeeMesh::do_client_read_loop(std::shared_ptr<tcp::socket> socket,
+                             std::shared_ptr<asio::streambuf> buffer)
+{
+    asio::async_read_until(
+        *socket, *buffer, "\n",
+        [this, socket, buffer](const std::error_code &ec, std::size_t)
+    {
+        if (!ec)
+        {
+        }
+        else
+        {
+            std::println("Disconnected from Hive: {}", ec.message());
+        }
+    });
 }
 
 void
@@ -163,17 +141,56 @@ BeeMesh::start_launch_mode(const argparse::ArgumentParser &argparser)
     auto port    = argparser.get<Port>("--port");
     auto payload = argparser.get<std::string>("--payload");
 
-    asio::ip::tcp::socket socket(m_io_context);
-    asio::ip::tcp::resolver resolver(m_io_context);
+    // 1. Move socket to the heap so it outlives this function
+    auto socket   = std::make_shared<tcp::socket>(m_io_context);
+    auto resolver = std::make_shared<tcp::resolver>(m_io_context);
 
-    try
+    // 2. Resolve and Connect
+    resolver->async_resolve(
+        host, std::to_string(port),
+        [this, socket, payload](const std::error_code &ec,
+                                tcp::resolver::results_type results)
     {
-        asio::connect(socket, resolver.resolve(host, std::to_string(port)));
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error in connection: " << e.what();
-    }
+        if (ec)
+            return;
+
+        asio::async_connect(*socket, results,
+                            [this, socket, payload](const std::error_code &ec,
+                                                    const tcp::endpoint &)
+        {
+            if (ec)
+            {
+                std::cerr << "Connect failed: " << ec.message() << "\n";
+                return;
+            }
+
+            // 3. Send the registration message
+            nlohmann::json json;
+            json["msg_type"] = "launch";
+            json["payload"]  = payload;
+            std::string msg  = json.dump() + "\n";
+
+            auto message_ptr = std::make_shared<std::string>(std::move(msg));
+
+            asio::async_write(*socket, asio::buffer(*message_ptr),
+                              [this, socket, message_ptr](
+                                  const std::error_code &ec, std::size_t)
+            {
+                if (!ec)
+                {
+                    std::println("Successfully registered with Hive. Waiting "
+                                 "for commands...");
+
+                    // 4. START THE LOOP: Wait for commands from the Hive
+                    auto read_buffer = std::make_shared<asio::streambuf>();
+                    do_client_read_loop(socket, read_buffer);
+                }
+            });
+        });
+    });
+
+    // 5. This blocks until the socket closes or the program is stopped
+    m_io_context.run();
 }
 
 void

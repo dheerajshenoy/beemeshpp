@@ -2,6 +2,7 @@
 
 #include "Hive.hpp"
 
+#include <iostream>
 #include <print>
 
 Bee::Bee(asio::ip::tcp::socket socket, BeeId id, Hive *hive)
@@ -19,27 +20,53 @@ Bee::~Bee()
 void
 Bee::run()
 {
-    start_job_execution();
+
+    asio::ip::tcp::socket::keep_alive option(true);
+    m_socket.set_option(option);
+
     do_send_status();
 }
 
 void
 Bee::start_job_execution()
 {
+    if (!m_job)
+        return;
+
+    m_status = Status::Running;
+}
+
+void
+Bee::stop_job_execution()
+{
+    if (!m_job)
+        return;
+
+    m_status = Status::Stopped;
+}
+
+void
+Bee::resume_job_execution()
+{
+    if (!m_job)
+        return;
+
+    m_status = Status::Running;
 }
 
 void
 Bee::do_send_status()
 {
-    auto self = shared_from_this();
-
+    auto self       = shared_from_this();
+    std::string msg = "HELLO from BEE " + std::to_string(m_id) + "\n";
     asio::async_write(
-        m_socket, asio::buffer("HELLO from BEE " + std::to_string(m_id) + "\n"),
+        m_socket, asio::buffer(msg),
         [this, self](const std::error_code &ec, std::size_t /* length */)
     {
         if (ec)
         {
-            // TODO: Error Handling
+            std::cerr << "Failed to send status update: " << ec.message()
+                      << "\n";
             return;
         }
 
@@ -48,4 +75,21 @@ Bee::do_send_status()
 
         std::println("Bee sent message to hive");
     });
+}
+
+void
+Bee::do_read()
+{
+    auto self = shared_from_this();
+
+    // asio::async_read_until(
+    //     m_socket, m_buffer, "\n",
+    //     [this, self](const std::error_code &ec, std::size_t /* length */)
+    // {
+    //     if (ec)
+    //     {
+    //         std::cerr << "Failed to read from socket: " << ec.message() <<
+    //         "\n"; return;
+    //     }
+    // });
 }

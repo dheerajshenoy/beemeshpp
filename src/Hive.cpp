@@ -43,6 +43,7 @@ void
 Hive::run()
 {
     do_accept();
+    assign_jobs_to_bees();
 }
 
 void
@@ -93,6 +94,11 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
                 // Cleanly move the socket out of the context and into the Bee
                 add_bee(std::move(ctx->sock), json["payload"]);
             }
+
+            else if (json["msg_type"] == "launch")
+            {
+                add_job(json["payload"].dump());
+            }
         }
     });
 }
@@ -109,16 +115,22 @@ Hive::add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info)
         std::lock_guard<std::mutex> lock(m_bees_mutex);
         m_bees.push_back(bee);
     }
-
-    bee->run();
 }
 
 void
-Hive::add_job(std::unique_ptr<Job> job)
+Hive::add_job(const std::string &data)
 {
-    std::lock_guard<std::mutex> lock(m_jobs_mutex);
-    m_pending_jobs_queue.push(job->id());
-    m_all_jobs.push_back(std::move(job));
+    static JobId id   = 0;
+    JobId next_job_id = id++;
+
+    std::println("Hive received new job with ID: {}, PAYLOAD: {}", id, data);
+
+    auto job = std::make_unique<Job>(id, data);
+    {
+        std::lock_guard<std::mutex> lock(m_jobs_mutex);
+        m_pending_jobs_queue.push(job->id());
+        m_all_jobs[next_job_id] = std::move(job);
+    }
 }
 
 void
@@ -140,5 +152,51 @@ Hive::broadcast_payload(BroadcastType type, BeeId sender_id,
                          sender_id, payload);
         }
         break;
+    }
+}
+
+void
+Hive::assign_jobs_to_bees()
+{
+    std::lock_guard<std::mutex> jobs_lock(m_jobs_mutex);
+    std::lock_guard<std::mutex> bees_lock(m_bees_mutex);
+
+    if (m_pending_jobs_queue.empty() || m_bees.empty())
+        return;
+
+    // We only want to loop through the queue ONCE per call
+    static size_t bee_index = 0;
+
+    for (size_t i = 0; i < m_pending_jobs_queue.size(); ++i)
+    {
+        if (m_pending_jobs_queue.empty())
+            break;
+
+        JobId job_id = m_pending_jobs_queue.front();
+        m_pending_jobs_queue.pop();
+
+        // Find the bee using your round-robin index
+        auto &bee = m_bees[bee_index];
+        bee_index = (bee_index + 1) % m_bees.size();
+
+        if (bee->is_available())
+        {
+            Job *job = m_all_jobs[job_id].get();
+            if (!job)
+            {
+                std::cerr << "Error: Job ID " << job_id
+                          << " not found in all_jobs map\n";
+                continue;
+            }
+
+            bee->assign_job(job);
+            std::println("Assigned Job {} to Bee {}", job_id, bee->id());
+        }
+        else
+        {
+            // Put it back at the end of the line and STOP trying for now
+            // OR keep it in the queue for the next assign_jobs_to_bees() call
+            m_pending_jobs_queue.push(job_id);
+        }
     }
 }

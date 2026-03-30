@@ -25,6 +25,7 @@ public:
     {
         Idle,
         Running,
+        Stopped,
         Completed,
         Failed
     };
@@ -44,15 +45,31 @@ public:
         return m_name;
     }
 
+    inline bool is_available() const
+    {
+        return m_status == Status::Idle;
+    }
+
     void run();
+
+    inline void assign_job(Job *job)
+    {
+        m_job = job;
+    }
+
+    void start_job_execution();
+    void stop_job_execution();
+    void resume_job_execution();
 
 private:
     void do_send_status();
-    void start_job_execution();
+    void do_read();
+    void do_write();
 
 private:
     BeeId m_id;
     std::string m_name;
+    Job *m_job{nullptr};
     asio::ip::tcp::socket m_socket;
     Hive *m_hive;
     Status m_status{Status::Idle};

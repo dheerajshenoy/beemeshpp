@@ -38,9 +38,11 @@ public:
                            const std::string &payload);
 
 private:
+    void add_job(const std::string &data);
     void add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info);
     void handle_connection(asio::ip::tcp::socket socket);
     void do_accept();
+    void assign_jobs_to_bees();
 
 private:
     asio::io_context &m_io_context;
@@ -51,5 +53,5 @@ private:
     std::mutex m_bees_mutex;
     std::mutex m_jobs_mutex;
     std::queue<JobId> m_pending_jobs_queue;
-    std::vector<std::unique_ptr<Job>> m_all_jobs;
+    std::unordered_map<JobId, std::unique_ptr<Job>> m_all_jobs;
 };
