@@ -29,7 +29,7 @@ add_executable(${PROJECT_NAME}
     src/Job.cpp
     src/Hive.cpp
     src/Bee.cpp
-    src/BeeMesh.cpp
+    src/Connection.cpp
 )
 
 target_compile_options(${PROJECT_NAME}

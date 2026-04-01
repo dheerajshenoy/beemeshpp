@@ -1,21 +1,34 @@
 #include "Hive.hpp"
 
+#include "Connection.hpp"
+
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <print>
 
-Hive::Hive(asio::io_context &io_context, const std::string &auth_token,
-           const Endpoint &endpoint)
-    : m_auth_token(auth_token), m_endpoint(endpoint), m_io_context(io_context),
-      m_acceptor(io_context)
+Hive::Hive(const std::string &auth_token, const std::string &host,
+           const std::string &port)
+    : m_acceptor(m_io_context), m_auth_token(auth_token), m_host(host),
+      m_port(port)
+{
+    init_connection();
+}
+
+Hive::~Hive()
+{
+    m_io_context.stop();
+    std::println("Hive is shutting down...");
+}
+
+void
+Hive::init_connection()
 {
     try
     {
         // Convert host string to ASIO address
-        tcp::resolver resolver(io_context);
-        auto results = resolver.resolve(m_endpoint.host,
-                                        std::to_string(m_endpoint.port));
+        tcp::resolver resolver(m_io_context);
+        auto results = resolver.resolve(m_host, m_port);
 
         tcp::endpoint ep = *results.begin(); // take the first resolved endpoint
 
@@ -24,8 +37,7 @@ Hive::Hive(asio::io_context &io_context, const std::string &auth_token,
         m_acceptor.bind(ep);
         m_acceptor.listen();
 
-        std::println("Hive listening on {}:{}", m_endpoint.host,
-                     m_endpoint.port);
+        std::println("Hive listening on {}:{}", m_host, m_port);
     }
     catch (const std::exception &e)
     {
@@ -34,16 +46,13 @@ Hive::Hive(asio::io_context &io_context, const std::string &auth_token,
     }
 }
 
-Hive::~Hive()
-{
-    std::println("Hive is shutting down...");
-}
-
 void
 Hive::run()
 {
     do_accept();
     assign_jobs_to_bees();
+
+    m_io_context.run();
 }
 
 void
@@ -70,51 +79,26 @@ Hive::do_accept()
 void
 Hive::handle_connection(asio::ip::tcp::socket socket)
 {
-    struct Context
+    auto conn         = std::make_shared<Connection>(std::move(socket));
+    auto request_type = conn->get_request_type();
+    auto data         = conn->get_data();
+    std::println("Connection type: {}, data: {}",
+                 static_cast<int>(request_type), data);
+    switch (request_type)
     {
-        asio::ip::tcp::socket sock;
-        asio::streambuf buffer;
-        Context(asio::ip::tcp::socket s) : sock(std::move(s)) {}
-    };
-
-    auto ctx = std::make_shared<Context>(std::move(socket));
-
-    asio::async_read_until(ctx->sock, ctx->buffer, "\n",
-                           [this, ctx](const std::error_code &ec, std::size_t)
-    {
-        if (!ec)
-        {
-            std::istream is(&ctx->buffer);
-            std::string line;
-            std::getline(is, line);
-
-            auto json = nlohmann::json::parse(line);
-            if (json["msg_type"] == "bee")
-            {
-                // Cleanly move the socket out of the context and into the Bee
-                add_bee(std::move(ctx->sock), json["payload"]);
-            }
-
-            else if (json["msg_type"] == "launch")
-            {
-                add_job(json["payload"].dump());
-            }
-        }
-    });
+        case RequestType::Bee:
+            add_bee(std::move(conn->socket()), nlohmann::json::parse(data));
+            break;
+        case RequestType::Monitor:
+        case RequestType::Launch:
+        case RequestType::Broadcast:
+            break;
+    }
 }
 
 void
 Hive::add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info)
 {
-    static BeeId bee_id = 0;
-    BeeId next_bee_id   = bee_id++;
-
-    auto bee = std::make_shared<Bee>(std::move(socket), next_bee_id, this);
-
-    {
-        std::lock_guard<std::mutex> lock(m_bees_mutex);
-        m_bees.push_back(bee);
-    }
 }
 
 void
@@ -134,28 +118,6 @@ Hive::add_job(const std::string &data)
 }
 
 void
-Hive::broadcast_payload(BroadcastType type, BeeId sender_id,
-                        const std::string &payload)
-{
-    switch (type)
-    {
-        case BroadcastType::StatusUpdate:
-        {
-            std::println("Hive broadcasting payload from Bee {}: {}", sender_id,
-                         payload);
-        }
-        break;
-
-        case BroadcastType::JobResult:
-        {
-            std::println("Hive broadcasting job result from Bee {}: {}",
-                         sender_id, payload);
-        }
-        break;
-    }
-}
-
-void
 Hive::assign_jobs_to_bees()
 {
     std::lock_guard<std::mutex> jobs_lock(m_jobs_mutex);
@@ -163,40 +125,4 @@ Hive::assign_jobs_to_bees()
 
     if (m_pending_jobs_queue.empty() || m_bees.empty())
         return;
-
-    // We only want to loop through the queue ONCE per call
-    static size_t bee_index = 0;
-
-    for (size_t i = 0; i < m_pending_jobs_queue.size(); ++i)
-    {
-        if (m_pending_jobs_queue.empty())
-            break;
-
-        JobId job_id = m_pending_jobs_queue.front();
-        m_pending_jobs_queue.pop();
-
-        // Find the bee using your round-robin index
-        auto &bee = m_bees[bee_index];
-        bee_index = (bee_index + 1) % m_bees.size();
-
-        if (bee->is_available())
-        {
-            Job *job = m_all_jobs[job_id].get();
-            if (!job)
-            {
-                std::cerr << "Error: Job ID " << job_id
-                          << " not found in all_jobs map\n";
-                continue;
-            }
-
-            bee->assign_job(job);
-            std::println("Assigned Job {} to Bee {}", job_id, bee->id());
-        }
-        else
-        {
-            // Put it back at the end of the line and STOP trying for now
-            // OR keep it in the queue for the next assign_jobs_to_bees() call
-            m_pending_jobs_queue.push(job_id);
-        }
-    }
 }

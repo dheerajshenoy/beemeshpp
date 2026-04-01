@@ -1,5 +1,4 @@
-#include "BeeMesh.hpp"
-#include "Endpoint.hpp"
+#include "Hive.hpp"
 #include "argparse.hpp"
 
 #include <print>
@@ -26,9 +25,8 @@ main(int argc, char *argv[])
 
     monitor_command.add_argument("--port")
         .help("Port number for the monitor to listen on")
-        .default_value(Port{8080})
+        .default_value("8080")
         .nargs(1)
-        .scan<'u', Port>()
         .metavar("PORT");
 
     argparse::ArgumentParser launch_command("launch");
@@ -44,9 +42,8 @@ main(int argc, char *argv[])
 
     launch_command.add_argument("--port")
         .help("Port number for the launch command to connect to the hive")
-        .default_value(Port{8080})
+        .default_value("8080")
         .nargs(1)
-        .scan<'u', Port>()
         .metavar("PORT");
 
     launch_command.add_argument("--payload")
@@ -62,9 +59,8 @@ main(int argc, char *argv[])
 
     hive_command.add_argument("--port")
         .help("Port number for the hive to listen on")
-        .default_value(Port{8080})
+        .default_value("8080")
         .nargs(1)
-        .scan<'u', Port>()
         .metavar("PORT");
 
     hive_command.add_argument("--host")
@@ -91,9 +87,8 @@ main(int argc, char *argv[])
 
     bee_command.add_argument("--port")
         .help("Port number for the bee to connect to the hive")
-        .default_value(Port{8080})
+        .default_value("8080")
         .nargs(1)
-        .scan<'u', Port>()
         .metavar("PORT");
 
     bee_command.add_argument("--auth-token")
@@ -123,23 +118,30 @@ main(int argc, char *argv[])
         return 1;
     }
 
-    BeeMesh beemesh;
-
     if (parser.is_subcommand_used("monitor"))
     {
-        beemesh.start_monitor_mode(monitor_command);
     }
     else if (parser.is_subcommand_used("launch"))
     {
-        beemesh.start_launch_mode(launch_command);
     }
     else if (parser.is_subcommand_used("hive"))
     {
-        beemesh.start_hive_mode(hive_command);
+
+        std::string auth_token = hive_command.get<std::string>("--auth-token");
+        std::string host       = hive_command.get<std::string>("--host");
+        std::string port       = hive_command.get<std::string>("--port");
+
+        Hive hive(auth_token, host, port);
+        hive.run();
     }
     else if (parser.is_subcommand_used("bee"))
     {
-        beemesh.start_bee_mode(bee_command);
+        std::string auth_token = bee_command.get<std::string>("--auth-token");
+        std::string host       = bee_command.get<std::string>("--host");
+        std::string port       = bee_command.get<std::string>("--port");
+
+        Bee bee(auth_token, host, port);
+        bee.run();
     }
 
     return 0;

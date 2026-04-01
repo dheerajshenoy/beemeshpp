@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HostInfo.hpp"
 #include "Job.hpp"
 
 #include <asio.hpp>
@@ -9,17 +10,14 @@
 using BeeId = uint64_t;
 using asio::ip::tcp;
 
-class Hive;
+#define MSG_DELIMITER "\n"
 
-class Bee : public std::enable_shared_from_this<Bee>
+class Bee
 {
 public:
-    Bee(tcp::socket socket, BeeId id, Hive *hive);
+    Bee(const std::string &auth_token, const std::string &host,
+        const std::string &port);
     ~Bee();
-
-    // Prevent copying to protect the socket resource
-    Bee(const Bee &)            = delete;
-    Bee &operator=(const Bee &) = delete;
 
     enum class Status
     {
@@ -40,11 +38,6 @@ public:
         return m_id;
     }
 
-    inline const std::string &name() const
-    {
-        return m_name;
-    }
-
     inline bool is_available() const
     {
         return m_status == Status::Idle;
@@ -57,20 +50,23 @@ public:
         m_job = job;
     }
 
-    void start_job_execution();
-    void stop_job_execution();
-    void resume_job_execution();
+    void start_job();
+    void stop_job();
+    void resume_job();
 
 private:
-    void do_send_status();
-    void do_read();
-    void do_write();
+    void init_connection();
+    void read_from_hive();
 
 private:
-    BeeId m_id;
-    std::string m_name;
-    Job *m_job{nullptr};
+    asio::io_context m_io_context;
     asio::ip::tcp::socket m_socket;
-    Hive *m_hive;
+    BeeId m_id;
+    HostInfo m_info;
+    Job *m_job{nullptr};
+    std::string m_auth_token;
+    std::string m_host;
+    std::string m_port;
+    std::string m_buffer;
     Status m_status{Status::Idle};
 };

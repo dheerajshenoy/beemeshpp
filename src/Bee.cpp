@@ -1,34 +1,54 @@
 #include "Bee.hpp"
 
-#include "Hive.hpp"
+#include "Connection.hpp"
 
 #include <iostream>
 #include <print>
 
-Bee::Bee(asio::ip::tcp::socket socket, BeeId id, Hive *hive)
-    : m_socket(std::move(socket)), m_id(id), m_hive(hive)
+Bee::Bee(const std::string &auth_token, const std::string &host,
+         const std::string &port)
+    : m_auth_token(auth_token), m_host(host), m_port(port),
+      m_socket(m_io_context)
 {
-    m_name = "Bee-" + std::to_string(m_id);
+    init_connection();
 }
 
 Bee::~Bee()
 {
-    std::println("Bee (id: {}, name: {}) is shutting down...", m_id, m_name);
+    std::println("Bee [id: {}] is shutting down...", m_id);
+}
+
+void
+Bee::init_connection()
+{
+    std::println("Bee is connecting to Hive at {}:{} with auth token '{}'",
+                 m_host, m_port, m_auth_token);
+    tcp::resolver resolver(m_io_context);
+    asio::connect(m_socket, resolver.resolve(m_host, m_port));
 }
 
 // Inside Bee.cpp
 void
 Bee::run()
 {
-
-    asio::ip::tcp::socket::keep_alive option(true);
-    m_socket.set_option(option);
-
-    do_send_status();
+    nlohmann::json data = {{"type", "bee"}, {"data", "<device info>"}};
+    asio::async_write(m_socket, asio::buffer(data.dump() + MSG_DELIMITER),
+                      [this](const std::error_code &ec, std::size_t length)
+    {
+        if (ec)
+        {
+            std::cerr << "Error sending data to Hive: " << ec.message()
+                      << std::endl;
+            return;
+        }
+        std::println("Bee [id: {}] sent device info to Hive", m_id);
+        read_from_hive();
+    });
+    m_io_context.run();
 }
 
 void
-Bee::start_job_execution()
+Bee::start_job()
 {
     if (!m_job)
         return;
@@ -37,7 +57,7 @@ Bee::start_job_execution()
 }
 
 void
-Bee::stop_job_execution()
+Bee::stop_job()
 {
     if (!m_job)
         return;
@@ -46,7 +66,7 @@ Bee::stop_job_execution()
 }
 
 void
-Bee::resume_job_execution()
+Bee::resume_job()
 {
     if (!m_job)
         return;
@@ -55,41 +75,34 @@ Bee::resume_job_execution()
 }
 
 void
-Bee::do_send_status()
+Bee::read_from_hive()
 {
-    auto self       = shared_from_this();
-    std::string msg = "HELLO from BEE " + std::to_string(m_id) + "\n";
-    asio::async_write(
-        m_socket, asio::buffer(msg),
-        [this, self](const std::error_code &ec, std::size_t /* length */)
+
+    asio::async_read_until(m_socket, asio::dynamic_buffer(m_buffer),
+                           MSG_DELIMITER,
+                           [this](const std::error_code &ec, std::size_t length)
     {
         if (ec)
         {
-            std::cerr << "Failed to send status update: " << ec.message()
-                      << "\n";
+            std::cerr << "Error reading from Hive: " << ec.message() << "\n";
             return;
         }
 
-        m_hive->broadcast_payload(BroadcastType::StatusUpdate, m_id,
-                                  "HELLO from BEE " + std::to_string(m_id));
+        // Extract exactly one message worth of bytes
+        std::string message(m_buffer.begin(), m_buffer.begin() + length);
+        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + length);
 
-        std::println("Bee sent message to hive");
+        try
+        {
+            auto json = nlohmann::json::parse(message);
+            // handle_message(json);
+        }
+        catch (const nlohmann::json::exception &e)
+        {
+            std::cerr << "Failed to parse message from Hive: " << e.what()
+                      << "\n";
+        }
+
+        read_from_hive();
     });
-}
-
-void
-Bee::do_read()
-{
-    auto self = shared_from_this();
-
-    // asio::async_read_until(
-    //     m_socket, m_buffer, "\n",
-    //     [this, self](const std::error_code &ec, std::size_t /* length */)
-    // {
-    //     if (ec)
-    //     {
-    //         std::cerr << "Failed to read from socket: " << ec.message() <<
-    //         "\n"; return;
-    //     }
-    // });
 }
