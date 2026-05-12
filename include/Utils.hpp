@@ -1,8 +1,12 @@
 #pragma once
 
 #include "HostInfo.hpp"
+#include "MessageType.hpp"
 
+#include <iostream>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace Utils
 {
@@ -33,7 +37,7 @@ namespace Utils
         if (!GetComputerNameA(hostname, &size))
             std::cerr << "Failed to get device name\n";
 #else
-        if (!gethostname(hostname, sizeof(hostname)) == 0)
+        if (!(gethostname(hostname, sizeof(hostname)) == 0))
             std::cerr << "Failed to get device name\n";
 #endif
         return hostname;
@@ -142,13 +146,33 @@ namespace Utils
 #endif
     }
 
-    HostInfo get_host_info()
+    inline HostInfo get_host_info()
     {
         return HostInfo{.name   = Utils::get_host_name(),
                         .OS     = Utils::get_os_name(),
                         .CPUs   = Utils::get_cpus(),
                         .GPUs   = Utils::get_gpus(),
                         .RAM_mb = Utils::get_host_total_ram_mb()};
+    }
+
+    inline constexpr std::array<std::string_view, 6> MESSAGE_TYPE_STRINGS = {
+        "bee_registration", "bee_id_assignment", "job_assignment",
+        "job_result",       "status_update",     "error_report",
+    };
+
+    inline std::string_view to_string(MessageType type)
+    {
+        return MESSAGE_TYPE_STRINGS[static_cast<std::size_t>(type)];
+    }
+
+    inline MessageType message_type_from_string(std::string_view s)
+    {
+        const auto it = std::ranges::find(MESSAGE_TYPE_STRINGS, s);
+        if (it == MESSAGE_TYPE_STRINGS.end())
+            throw std::invalid_argument(std::string("Unknown MessageType: ")
+                                        + std::string(s));
+        return static_cast<MessageType>(
+            std::distance(MESSAGE_TYPE_STRINGS.begin(), it));
     }
 
 }; // namespace Utils

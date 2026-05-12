@@ -1,6 +1,7 @@
 #include "Hive.hpp"
 
-#include "Connection.hpp"
+#include "MessageType.hpp"
+#include "Utils.hpp"
 
 #include <iostream>
 #include <memory>
@@ -70,6 +71,7 @@ Hive::do_accept()
         else
         {
             handle_connection(std::move(socket));
+            handle_heartbeat();
         }
 
         do_accept();
@@ -86,19 +88,42 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
                  static_cast<int>(request_type), data);
     switch (request_type)
     {
-        case RequestType::Bee:
-            add_bee(std::move(conn->socket()), nlohmann::json::parse(data));
+        case MessageType::BEE_REGISTRATION:
+            add_bee(conn, {}); // TODO: parse bee info from data
             break;
-        case RequestType::Monitor:
-        case RequestType::Launch:
-        case RequestType::Broadcast:
+        case MessageType::BEE_ID_ASSIGNMENT:
+        case MessageType::JOB_ASSIGNMENT:
+        case MessageType::JOB_RESULT:
+        case MessageType::STATUS_UPDATE:
+        case MessageType::ERROR_REPORT:
             break;
     }
 }
 
 void
-Hive::add_bee(asio::ip::tcp::socket socket, const nlohmann::json &bee_info)
+Hive::add_bee(const std::shared_ptr<Connection> &connection,
+              const nlohmann::json &bee_info)
 {
+    send_id_to_bee(connection);
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        m_bee_connections.push_back(connection);
+    }
+}
+
+void
+Hive::send_id_to_bee(const std::shared_ptr<Connection> &connection)
+{
+    static BeeId id   = 1000;
+    BeeId next_bee_id = id++;
+
+    std::println("Assigning Bee ID {} to new bee connection", next_bee_id);
+    nlohmann::json response;
+    response["type"] = Utils::to_string(MessageType::BEE_ID_ASSIGNMENT);
+    response["data"] = {{"bee_id", std::to_string(next_bee_id)}};
+
+    std::string response_str = response.dump() + "\n";
+    connection->write(response_str);
 }
 
 void
@@ -123,6 +148,20 @@ Hive::assign_jobs_to_bees()
     std::lock_guard<std::mutex> jobs_lock(m_jobs_mutex);
     std::lock_guard<std::mutex> bees_lock(m_bees_mutex);
 
-    if (m_pending_jobs_queue.empty() || m_bees.empty())
-        return;
+    // if (m_pending_jobs_queue.empty() || m_bees.empty())
+    //     return;
+}
+
+void
+Hive::handle_heartbeat()
+{
+    for (const auto &bee_conn : m_bee_connections)
+    {
+        nlohmann::json heartbeat_msg;
+        heartbeat_msg["type"] = Utils::to_string(MessageType::STATUS_CHECK);
+        heartbeat_msg["data"] = "ualive?";
+
+        std::string msg_str = heartbeat_msg.dump() + "\n";
+        bee_conn->write(msg_str);
+    }
 }

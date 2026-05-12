@@ -57,6 +57,7 @@ public:
 private:
     void init_connection();
     void read_from_hive();
+    void handle_message(const std::string &message);
 
 private:
     asio::io_context m_io_context;

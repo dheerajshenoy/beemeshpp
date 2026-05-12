@@ -1,6 +1,7 @@
 #include "Bee.hpp"
 
-#include "Connection.hpp"
+#include "MessageType.hpp"
+#include "Utils.hpp"
 
 #include <iostream>
 #include <print>
@@ -31,7 +32,10 @@ Bee::init_connection()
 void
 Bee::run()
 {
-    nlohmann::json data = {{"type", "bee"}, {"data", "<device info>"}};
+    nlohmann::json data
+        = {{"type", Utils::to_string(MessageType::BEE_REGISTRATION)},
+           {"data", "<device info>"}};
+
     asio::async_write(m_socket, asio::buffer(data.dump() + MSG_DELIMITER),
                       [this](const std::error_code &ec, std::size_t length)
     {
@@ -44,6 +48,7 @@ Bee::run()
         std::println("Bee [id: {}] sent device info to Hive", m_id);
         read_from_hive();
     });
+
     m_io_context.run();
 }
 
@@ -92,17 +97,53 @@ Bee::read_from_hive()
         std::string message(m_buffer.begin(), m_buffer.begin() + length);
         m_buffer.erase(m_buffer.begin(), m_buffer.begin() + length);
 
-        try
-        {
-            auto json = nlohmann::json::parse(message);
-            // handle_message(json);
-        }
-        catch (const nlohmann::json::exception &e)
-        {
-            std::cerr << "Failed to parse message from Hive: " << e.what()
-                      << "\n";
-        }
-
         read_from_hive();
+        handle_message(message);
     });
+}
+
+void
+Bee::handle_message(const std::string &message)
+{
+    try
+    {
+        const auto json_msg = nlohmann::json::parse(message);
+        const auto type     = Utils::message_type_from_string(
+            json_msg.at("type").get<std::string>());
+
+        switch (type)
+        {
+            case MessageType::BEE_ID_ASSIGNMENT:
+                m_id = std::stoi(
+                    json_msg.at("data").at("bee_id").get<std::string>());
+                std::println("Bee assigned id: {}", m_id);
+                break;
+
+            case MessageType::JOB_ASSIGNMENT:
+                // handle job
+                break;
+
+            case MessageType::STATUS_UPDATE:
+                // handle status
+                break;
+
+            case MessageType::STATUS_CHECK:
+                std::println("Received status check from Hive");
+                break;
+
+            case MessageType::ERROR_REPORT:
+                std::cerr << "Hive error: "
+                          << json_msg.at("data").get<std::string>() << "\n";
+                break;
+
+            default:
+                std::cerr << "Unexpected message type from Hive: "
+                          << json_msg.at("type") << "\n";
+                break;
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error handling message: " << e.what() << "\n";
+    }
 }
