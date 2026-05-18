@@ -39,7 +39,7 @@ private:
                        const nlohmann::json &data);
     void on_bee_disconnect(const std::shared_ptr<Connection> &conn);
 
-    void add_job(const std::string &payload);
+    void add_job(const nlohmann::json &data);
     void assign_jobs_to_bees();
     void handle_heartbeat();
 

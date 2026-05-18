@@ -15,25 +15,20 @@ using JobId = uint64_t;
 class Job
 {
 public:
-    Job(JobId id, const std::string &data);
+    Job(JobId id, const std::string &data, const std::string &filename = {});
     ~Job();
 
-    inline JobId id() const
-    {
-        return m_id;
-    }
+    inline JobId id() const { return m_id; }
 
-    inline void set_data(const std::string &data)
-    {
-        m_data = data;
-    }
+    inline const std::string &data() const { return m_data; }
 
-    inline const std::string &data() const
-    {
-        return m_data;
-    }
+    inline const std::string &filename() const { return m_filename; }
+
+    // True when the payload is file content rather than a shell command.
+    inline bool is_file() const { return !m_filename.empty(); }
 
 private:
     JobId m_id;
     std::string m_data;
+    std::string m_filename;
 };

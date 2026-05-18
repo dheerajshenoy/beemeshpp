@@ -85,7 +85,7 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
                     break;
 
                 case MessageType::JOB_SUBMISSION:
-                    add_job(data.get<std::string>());
+                    add_job(data);
                     break;
 
                 default:
@@ -200,16 +200,22 @@ Hive::on_bee_disconnect(const std::shared_ptr<Connection> &conn)
 }
 
 void
-Hive::add_job(const std::string &payload)
+Hive::add_job(const nlohmann::json &data)
 {
     static JobId next_id = 0;
     JobId id             = next_id++;
 
-    std::println("Hive queued job {}: '{}'", id, payload);
+    std::string payload  = data.at("payload").get<std::string>();
+    std::string filename = data.value("filename", "");
+
+    if (filename.empty())
+        std::println("Hive queued job {}: '{}'", id, payload);
+    else
+        std::println("Hive queued job {} (file: '{}')", id, filename);
 
     {
         std::lock_guard<std::mutex> lock(m_jobs_mutex);
-        m_all_jobs[id] = std::make_unique<Job>(id, payload);
+        m_all_jobs[id] = std::make_unique<Job>(id, payload, filename);
         m_pending_jobs.push(id);
     }
 
@@ -236,7 +242,9 @@ Hive::assign_jobs_to_bees()
 
         nlohmann::json msg;
         msg["type"] = Utils::to_string(MessageType::JOB_ASSIGNMENT);
-        msg["data"] = {{"job_id", job_id}, {"payload", job->data()}};
+        msg["data"] = {{"job_id", job_id},
+                       {"payload", job->data()},
+                       {"filename", job->filename()}};
         entry.conn->write(msg.dump() + "\n");
 
         entry.is_idle    = false;

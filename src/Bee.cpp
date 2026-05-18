@@ -3,6 +3,8 @@
 #include "MessageType.hpp"
 #include "Utils.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <print>
 #include <thread>
@@ -130,10 +132,33 @@ Bee::handle_message(const std::string &message)
 
                 // Run the job on a worker thread so the io_context stays
                 // responsive (heartbeats, future assignments) during execution.
-                std::thread([this, job_id, payload]()
+                std::string filename =
+                    json_msg.at("data").value("filename", "");
+
+                std::thread([this, job_id, payload, filename]()
                 {
+                    std::filesystem::path tmp_path;
+                    if (!filename.empty())
+                    {
+                        tmp_path = std::filesystem::temp_directory_path()
+                                   / ("beemesh_" + std::to_string(job_id)
+                                      + "_" + filename);
+                        std::ofstream f(tmp_path, std::ios::binary);
+                        f << payload;
+                        f.close();
+                        std::filesystem::permissions(
+                            tmp_path,
+                            std::filesystem::perms::owner_exec
+                                | std::filesystem::perms::owner_read
+                                | std::filesystem::perms::owner_write,
+                            std::filesystem::perm_options::add);
+                    }
+
+                    std::string cmd =
+                        tmp_path.empty() ? payload : tmp_path.string();
+
                     std::string output;
-                    FILE *pipe = popen(payload.c_str(), "r");
+                    FILE *pipe = popen(cmd.c_str(), "r");
                     if (pipe)
                     {
                         char buf[256];
@@ -141,6 +166,9 @@ Bee::handle_message(const std::string &message)
                             output += buf;
                         pclose(pipe);
                     }
+
+                    if (!tmp_path.empty())
+                        std::filesystem::remove(tmp_path);
 
                     // Post result back to the io_context thread for safe socket access.
                     asio::post(m_io_context,
