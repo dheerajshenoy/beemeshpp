@@ -8,5 +8,7 @@ enum class MessageType
     JOB_RESULT,
     STATUS_UPDATE,
     STATUS_CHECK,
-    ERROR_REPORT
+    ERROR_REPORT,
+    JOB_SUBMISSION,
+    COUNT
 };

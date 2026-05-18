@@ -1,4 +1,5 @@
 #include "Hive.hpp"
+#include "Launcher.hpp"
 #include "argparse.hpp"
 
 #include <print>
@@ -120,10 +121,19 @@ main(int argc, char *argv[])
 
     if (parser.is_subcommand_used("monitor"))
     {
+        // TODO: Implement monitor functionality
     }
+
     else if (parser.is_subcommand_used("launch"))
     {
+        std::string host    = launch_command.get<std::string>("--host");
+        std::string port    = launch_command.get<std::string>("--port");
+        std::string payload = launch_command.get<std::string>("--payload");
+
+        Launcher launcher(host, port, payload);
+        launcher.run();
     }
+
     else if (parser.is_subcommand_used("hive"))
     {
 

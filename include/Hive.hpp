@@ -7,15 +7,17 @@
 #include <asio.hpp>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <queue>
+#include <unordered_map>
 
-enum class BroadcastType
+struct BeeEntry
 {
-    StatusUpdate = 0,
-    JobResult
+    std::shared_ptr<Connection> conn;
+    BeeId id{0};
+    bool is_idle{true};
+    std::optional<JobId> current_job;
 };
-
-using BeeList = std::vector<std::shared_ptr<Bee>>;
 
 class Hive
 {
@@ -24,25 +26,20 @@ public:
          const std::string &port);
     ~Hive();
 
-    Hive(Hive *);
-
     void run();
-
-    // inline const BeeList &bees() const
-    // {
-    //     return m_bees;
-    // }
-
-    void add_job(std::unique_ptr<Job> job);
 
 private:
     void init_connection();
-    void add_job(const std::string &data);
-    void add_bee(const std::shared_ptr<Connection> &conn,
-                 const nlohmann::json &bee_info);
-    void send_id_to_bee(const std::shared_ptr<Connection> &conn);
-    void handle_connection(asio::ip::tcp::socket socket);
     void do_accept();
+    void handle_connection(asio::ip::tcp::socket socket);
+
+    bool register_bee(const std::shared_ptr<Connection> &conn,
+                      const nlohmann::json &data);
+    void on_job_result(const std::shared_ptr<Connection> &conn,
+                       const nlohmann::json &data);
+    void on_bee_disconnect(const std::shared_ptr<Connection> &conn);
+
+    void add_job(const std::string &payload);
     void assign_jobs_to_bees();
     void handle_heartbeat();
 
@@ -52,10 +49,11 @@ private:
     std::string m_auth_token;
     std::string m_host;
     std::string m_port;
-    // BeeList m_bees;
-    std::vector<std::shared_ptr<Connection>> m_bee_connections;
+
+    std::vector<BeeEntry> m_bees;
     std::mutex m_bees_mutex;
-    std::mutex m_jobs_mutex;
-    std::queue<JobId> m_pending_jobs_queue;
+
+    std::queue<JobId> m_pending_jobs;
     std::unordered_map<JobId, std::unique_ptr<Job>> m_all_jobs;
+    std::mutex m_jobs_mutex;
 };

@@ -8,6 +8,11 @@
 #include <thread>
 #include <vector>
 
+extern "C"
+{
+#include <unistd.h>
+}
+
 namespace Utils
 {
 
@@ -155,10 +160,12 @@ namespace Utils
                         .RAM_mb = Utils::get_host_total_ram_mb()};
     }
 
-    inline constexpr std::array<std::string_view, 6> MESSAGE_TYPE_STRINGS = {
-        "bee_registration", "bee_id_assignment", "job_assignment",
-        "job_result",       "status_update",     "error_report",
-    };
+    // This has to be kept in sync with the MessageType enum in MessageType.hpp
+    inline constexpr std::array<std::string_view, (int)MessageType::COUNT>
+        MESSAGE_TYPE_STRINGS
+        = {"bee_registration", "bee_id_assignment", "job_assignment",
+           "job_result",       "status_update",     "status_check",
+           "error_report",     "job_submission"};
 
     inline std::string_view to_string(MessageType type)
     {

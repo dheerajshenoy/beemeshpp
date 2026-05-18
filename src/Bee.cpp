@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <print>
+#include <thread>
 
 Bee::Bee(const std::string &auth_token, const std::string &host,
          const std::string &port)
@@ -34,18 +35,19 @@ Bee::run()
 {
     nlohmann::json data
         = {{"type", Utils::to_string(MessageType::BEE_REGISTRATION)},
-           {"data", "<device info>"}};
+           {"data",
+            {{"auth_token", m_auth_token},
+             {"device_info", "<device info>"}}}};
 
     asio::async_write(m_socket, asio::buffer(data.dump() + MSG_DELIMITER),
-                      [this](const std::error_code &ec, std::size_t length)
+                      [this](const std::error_code &ec, std::size_t)
     {
         if (ec)
         {
-            std::cerr << "Error sending data to Hive: " << ec.message()
-                      << std::endl;
+            std::cerr << "Error sending registration to Hive: " << ec.message()
+                      << "\n";
             return;
         }
-        std::println("Bee [id: {}] sent device info to Hive", m_id);
         read_from_hive();
     });
 
@@ -114,14 +116,58 @@ Bee::handle_message(const std::string &message)
         switch (type)
         {
             case MessageType::BEE_ID_ASSIGNMENT:
-                m_id = std::stoi(
-                    json_msg.at("data").at("bee_id").get<std::string>());
+                m_id = json_msg.at("data").at("bee_id").get<BeeId>();
                 std::println("Bee assigned id: {}", m_id);
                 break;
 
             case MessageType::JOB_ASSIGNMENT:
-                // handle job
+            {
+                JobId job_id        = json_msg.at("data").at("job_id").get<JobId>();
+                std::string payload = json_msg.at("data").at("payload").get<std::string>();
+
+                std::println("Bee [id: {}] executing job {}: '{}'", m_id, job_id, payload);
+                m_status = Status::Running;
+
+                // Run the job on a worker thread so the io_context stays
+                // responsive (heartbeats, future assignments) during execution.
+                std::thread([this, job_id, payload]()
+                {
+                    std::string output;
+                    FILE *pipe = popen(payload.c_str(), "r");
+                    if (pipe)
+                    {
+                        char buf[256];
+                        while (fgets(buf, sizeof(buf), pipe))
+                            output += buf;
+                        pclose(pipe);
+                    }
+
+                    // Post result back to the io_context thread for safe socket access.
+                    asio::post(m_io_context,
+                               [this, job_id, output = std::move(output)]()
+                    {
+                        m_status = Status::Idle;
+
+                        nlohmann::json result;
+                        result["type"] = Utils::to_string(MessageType::JOB_RESULT);
+                        result["data"] = {{"job_id", job_id}, {"output", output}};
+
+                        asio::async_write(
+                            m_socket,
+                            asio::buffer(result.dump() + MSG_DELIMITER),
+                            [job_id](const std::error_code &ec, std::size_t)
+                        {
+                            if (!ec)
+                                std::println("Sent result for job {}", job_id);
+                            else
+                                std::cerr << "Error sending result: "
+                                          << ec.message() << "\n";
+                        });
+                    });
+                }).detach();
+
                 break;
+            }
 
             case MessageType::STATUS_UPDATE:
                 // handle status
