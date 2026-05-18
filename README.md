@@ -3,6 +3,15 @@ BeeMesh implementation in C++
 
 A distributed task execution system where a central **hive** receives jobs and dispatches them to connected **bee** nodes across the network.
 
+## Building and Running
+
+```bash
+cmake -B build
+cmake --build build
+cd build
+./beemesh
+```
+
 ## Usage
 
 ### Start the hive
@@ -38,9 +47,12 @@ beemesh launch --host <hive-ip> --port 9000 --payload /path/to/script.py
 
 Results are printed on the hive once the bee finishes execution.
 
-## Building
+### Monitoring
+
+The hive provides a simple dashboard to see connected bees and pending jobs:
 
 ```bash
-cmake -B build
-cmake --build build
+beemesh monitor --host <hive-ip> --port 9000
 ```
+
+<img src="./images/monitor.png" alt="Monitor Dashboard" width="600">
