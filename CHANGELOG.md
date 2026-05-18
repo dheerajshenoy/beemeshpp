@@ -25,6 +25,16 @@
 - Monitor table is interactive: navigate rows with `j`/`k` or arrow keys; press Enter to open a detail panel showing job output, exit code, and scrollable stdout/stderr
 - Track job exit codes end-to-end — bee extracts the real exit code from `pclose`, sends it with the result, hive stores and broadcasts it, monitor shows it per-bee in the table and detail panel (green for 0, red for non-zero)
 - MSVC compatibility: `_popen`/`_pclose` on Windows, `<windows.h>`/`<dxgi.h>` included for GPU/RAM/hostname APIs, `filesystem::permissions` guarded on non-Windows, MSVC compile flags and `dxgi` linkage added to CMake
+- Add `#BEEMESH` script directives (inspired by `#SBATCH`) for embedding job requirements directly in submitted scripts:
+  ```bash
+  #BEEMESH --name my-analysis
+  #BEEMESH --cpus 4
+  #BEEMESH --mem 16G
+  #BEEMESH --gpu
+  #BEEMESH --target my-hostname
+  ```
+- Hive matches job requirements against bee capabilities (CPU cores, RAM, GPU) collected at registration time; a job stays queued until a satisfying bee is available
+- Monitor table shows job ID and name together (e.g. `#3 my-analysis`); detail panel also includes the name
 
 ## 0.1.0
 

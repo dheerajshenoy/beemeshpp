@@ -7,6 +7,8 @@
 // Job = id + data
 // Data - command or file to execute
 
+#include "JobRequirements.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -15,7 +17,8 @@ using JobId = uint64_t;
 class Job
 {
 public:
-    Job(JobId id, const std::string &data, const std::string &filename = {});
+    Job(JobId id, const std::string &data, const std::string &filename = {},
+        JobRequirements reqs = {});
     ~Job();
 
     inline JobId id() const { return m_id; }
@@ -24,11 +27,13 @@ public:
 
     inline const std::string &filename() const { return m_filename; }
 
-    // True when the payload is file content rather than a shell command.
+    inline const JobRequirements &requirements() const { return m_requirements; }
+
     inline bool is_file() const { return !m_filename.empty(); }
 
 private:
-    JobId m_id;
-    std::string m_data;
-    std::string m_filename;
+    JobId           m_id;
+    std::string     m_data;
+    std::string     m_filename;
+    JobRequirements m_requirements;
 };

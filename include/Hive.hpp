@@ -6,10 +6,10 @@
 
 #include <asio.hpp>
 #include <chrono>
+#include <deque>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <queue>
 #include <unordered_map>
 
 struct BeeEntry
@@ -18,9 +18,13 @@ struct BeeEntry
     BeeId id{0};
     bool is_idle{true};
     std::optional<JobId> current_job;
+    std::string current_job_name;
     std::optional<std::chrono::system_clock::time_point> job_start_time;
     std::string hostname;
     std::string os;
+    unsigned cpu_cores{0};
+    unsigned ram_mb{0};
+    bool has_gpu{false};
     std::optional<JobId> last_completed_job;
     std::string last_job_output;
     std::optional<int> last_exit_code;
@@ -64,7 +68,7 @@ private:
     std::vector<BeeEntry> m_bees;
     std::mutex m_bees_mutex;
 
-    std::queue<JobId> m_pending_jobs;
+    std::deque<JobId> m_pending_jobs;
     std::unordered_map<JobId, std::unique_ptr<Job>> m_all_jobs;
     std::mutex m_jobs_mutex;
     int m_completed_jobs{0};

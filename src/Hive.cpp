@@ -1,8 +1,10 @@
 #include "Hive.hpp"
 
+#include "JobRequirements.hpp"
 #include "MessageType.hpp"
 #include "Utils.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -143,16 +145,38 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
     conn->write(response.dump() + "\n");
 
     std::string hostname, os;
+    unsigned cpu_cores = 0, ram_mb = 0;
+    bool has_gpu = false;
     if (data.contains("device_info"))
     {
         const auto &di = data.at("device_info");
         hostname       = di.value("name", "");
         os             = di.value("OS", "");
+        ram_mb         = di.value("RAM_mb", 0u);
+        if (di.contains("CPUs") && !di.at("CPUs").empty())
+            cpu_cores = di.at("CPUs")[0].value("n_cores", 0u);
+        if (di.contains("GPUs"))
+        {
+            for (const auto &g : di.at("GPUs"))
+            {
+                if (g.value("vendor", "") != "Unknown")
+                    { has_gpu = true; break; }
+            }
+        }
     }
 
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
-        m_bees.push_back({conn, id, true, std::nullopt, std::nullopt, hostname, os, std::nullopt, "", std::nullopt});
+        BeeEntry entry;
+        entry.conn      = conn;
+        entry.id        = id;
+        entry.is_idle   = true;
+        entry.hostname  = hostname;
+        entry.os        = os;
+        entry.cpu_cores = cpu_cores;
+        entry.ram_mb    = ram_mb;
+        entry.has_gpu   = has_gpu;
+        m_bees.push_back(std::move(entry));
     }
 
     std::println("Bee {} registered ({})", id, hostname.empty() ? "unknown" : hostname);
@@ -178,6 +202,7 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
             {
                 entry.is_idle            = true;
                 entry.current_job        = std::nullopt;
+                entry.current_job_name   = {};
                 entry.job_start_time     = std::nullopt;
                 entry.last_completed_job = job_id;
                 entry.last_job_output    = out;
@@ -218,7 +243,7 @@ Hive::on_bee_disconnect(const std::shared_ptr<Connection> &conn)
     if (requeue_job)
     {
         std::lock_guard<std::mutex> lock(m_jobs_mutex);
-        m_pending_jobs.push(*requeue_job);
+        m_pending_jobs.push_back(*requeue_job);
         std::println("Re-queued job {} from disconnected bee", *requeue_job);
         asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
     }
@@ -275,7 +300,8 @@ Hive::broadcast_status()
             bee["os"]       = entry.os;
             if (entry.current_job)
             {
-                bee["job_id"] = *entry.current_job;
+                bee["job_id"]   = *entry.current_job;
+                bee["job_name"] = entry.current_job_name;
                 if (entry.job_start_time)
                     bee["job_start_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
                         entry.job_start_time->time_since_epoch()).count();
@@ -316,20 +342,35 @@ Hive::add_job(const nlohmann::json &data)
 
     std::string payload  = data.at("payload").get<std::string>();
     std::string filename = data.value("filename", "");
+    JobRequirements reqs;
+    if (data.contains("requirements"))
+        reqs = data.at("requirements").get<JobRequirements>();
 
+    std::string label = reqs.name.empty() ? "" : " '" + reqs.name + "'";
     if (filename.empty())
-        std::println("Hive queued job {}: '{}'", id, payload);
+        std::println("Hive queued job {}{}: '{}'", id, label, payload);
     else
-        std::println("Hive queued job {} (file: '{}')", id, filename);
+        std::println("Hive queued job {}{} (file: '{}')", id, label, filename);
 
     {
         std::lock_guard<std::mutex> lock(m_jobs_mutex);
-        m_all_jobs[id] = std::make_unique<Job>(id, payload, filename);
-        m_pending_jobs.push(id);
+        m_all_jobs[id] = std::make_unique<Job>(id, payload, filename, std::move(reqs));
+        m_pending_jobs.push_back(id);
     }
 
     asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
     asio::post(m_io_context, [this]() { broadcast_status(); });
+}
+
+static bool
+bee_satisfies(const BeeEntry &bee, const JobRequirements &req)
+{
+    if (req.min_cpus > 0 && bee.cpu_cores < req.min_cpus) return false;
+    if (req.min_mem_mb > 0 && bee.ram_mb < req.min_mem_mb) return false;
+    if (req.requires_gpu && !bee.has_gpu) return false;
+    if (!req.target_hostname.empty() && bee.hostname != req.target_hostname)
+        return false;
+    return true;
 }
 
 void
@@ -345,21 +386,33 @@ Hive::assign_jobs_to_bees()
         if (!entry.is_idle)
             continue;
 
-        JobId job_id = m_pending_jobs.front();
-        m_pending_jobs.pop();
+        // Find the first pending job this bee can run.
+        auto it = std::find_if(
+            m_pending_jobs.begin(), m_pending_jobs.end(),
+            [&](JobId jid)
+            { return bee_satisfies(entry, m_all_jobs.at(jid)->requirements()); });
+
+        if (it == m_pending_jobs.end())
+            continue;
+
+        JobId job_id = *it;
+        m_pending_jobs.erase(it);
 
         auto &job = m_all_jobs.at(job_id);
+        const auto &reqs = job->requirements();
 
         nlohmann::json msg;
         msg["type"] = Utils::to_string(MessageType::JOB_ASSIGNMENT);
         msg["data"] = {{"job_id", job_id},
                        {"payload", job->data()},
-                       {"filename", job->filename()}};
+                       {"filename", job->filename()},
+                       {"job_name", reqs.name}};
         entry.conn->write(msg.dump() + "\n");
 
-        entry.is_idle        = false;
-        entry.current_job    = job_id;
-        entry.job_start_time = std::chrono::system_clock::now();
+        entry.is_idle           = false;
+        entry.current_job       = job_id;
+        entry.current_job_name  = reqs.name;
+        entry.job_start_time    = std::chrono::system_clock::now();
 
         std::println("Assigned job {} to bee {}", job_id, entry.id);
     }

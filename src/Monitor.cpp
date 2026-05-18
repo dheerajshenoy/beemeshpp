@@ -72,6 +72,7 @@ Monitor::connect_and_read()
                     info.last_output = bee.value("last_output", "");
                     if (bee.contains("job_id"))
                         info.current_job = bee.at("job_id").get<uint64_t>();
+                    info.current_job_name = bee.value("job_name", "");
                     if (bee.contains("job_start_ms"))
                         info.job_start_ms = bee.at("job_start_ms").get<int64_t>();
                     if (bee.contains("last_job_id"))
@@ -183,6 +184,8 @@ Monitor::run()
             if (bee.current_job)
             {
                 job_label = "Running job #" + std::to_string(*bee.current_job);
+                if (!bee.current_job_name.empty())
+                    job_label += "  \"" + bee.current_job_name + "\"";
             }
             else if (bee.last_job_id)
             {
@@ -287,9 +290,13 @@ Monitor::run()
             {
                 const auto &bee       = snap.bees[i];
                 auto status_color     = bee.is_idle ? Color::Green : Color::Yellow;
-                auto job_str          = bee.current_job
-                                            ? " #" + std::to_string(*bee.current_job)
-                                            : " -";
+                std::string job_str = " -";
+                if (bee.current_job)
+                {
+                    job_str = " #" + std::to_string(*bee.current_job);
+                    if (!bee.current_job_name.empty())
+                        job_str += " " + bee.current_job_name;
+                }
                 auto elapsed_str      = bee.job_start_ms
                                             ? " " + fmt_elapsed(now_ms - *bee.job_start_ms)
                                             : " -";
