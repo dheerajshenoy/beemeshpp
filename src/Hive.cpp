@@ -152,7 +152,7 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
 
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
-        m_bees.push_back({conn, id, true, std::nullopt, hostname, os});
+        m_bees.push_back({conn, id, true, std::nullopt, std::nullopt, hostname, os});
     }
 
     std::println("Bee {} registered ({})", id, hostname.empty() ? "unknown" : hostname);
@@ -175,8 +175,9 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
         {
             if (entry.conn == conn)
             {
-                entry.is_idle     = true;
-                entry.current_job = std::nullopt;
+                entry.is_idle        = true;
+                entry.current_job    = std::nullopt;
+                entry.job_start_time = std::nullopt;
                 break;
             }
         }
@@ -269,7 +270,12 @@ Hive::broadcast_status()
             bee["hostname"] = entry.hostname;
             bee["os"]       = entry.os;
             if (entry.current_job)
+            {
                 bee["job_id"] = *entry.current_job;
+                if (entry.job_start_time)
+                    bee["job_start_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        entry.job_start_time->time_since_epoch()).count();
+            }
             bees_json.push_back(bee);
             if (!entry.is_idle)
                 ++running;
@@ -342,8 +348,9 @@ Hive::assign_jobs_to_bees()
                        {"filename", job->filename()}};
         entry.conn->write(msg.dump() + "\n");
 
-        entry.is_idle     = false;
-        entry.current_job = job_id;
+        entry.is_idle        = false;
+        entry.current_job    = job_id;
+        entry.job_start_time = std::chrono::system_clock::now();
 
         std::println("Assigned job {} to bee {}", job_id, entry.id);
     }

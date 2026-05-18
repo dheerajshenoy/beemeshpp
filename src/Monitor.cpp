@@ -72,6 +72,8 @@ Monitor::connect_and_read()
                     info.os       = bee.value("os", "");
                     if (bee.contains("job_id"))
                         info.current_job = bee.at("job_id").get<uint64_t>();
+                    if (bee.contains("job_start_ms"))
+                        info.job_start_ms = bee.at("job_start_ms").get<int64_t>();
                     m_state.bees.push_back(info);
                 }
                 m_state.pending   = data.at("pending").get<int>();
@@ -100,6 +102,17 @@ Monitor::run()
     m_screen.store(&screen);
 
     std::thread([this]() { connect_and_read(); }).detach();
+
+    // Tick every second so elapsed-time columns stay live.
+    std::thread([this, &screen]()
+    {
+        while (m_screen.load())
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (auto *s = m_screen.load())
+                s->PostEvent(Event::Custom);
+        }
+    }).detach();
 
     auto renderer = Renderer([this]() -> Element
     {
@@ -143,7 +156,9 @@ Monitor::run()
                   separator(),
                   text(" Status  ") | bold | size(WIDTH, EQUAL, 10),
                   separator(),
-                  text(" Job ") | bold}) | color(Color::White));
+                  text(" Job      ") | bold | size(WIDTH, EQUAL, 14),
+                  separator(),
+                  text(" Elapsed ") | bold}) | color(Color::White));
         rows.push_back(separator());
 
         if (snap.bees.empty())
@@ -153,11 +168,29 @@ Monitor::run()
         }
         else
         {
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+            auto fmt_elapsed = [](int64_t ms) -> std::string
+            {
+                int s = static_cast<int>(ms / 1000);
+                if (s < 60)
+                    return std::to_string(s) + "s";
+                int m = s / 60; s %= 60;
+                if (m < 60)
+                    return std::to_string(m) + "m " + std::to_string(s) + "s";
+                int h = m / 60; m %= 60;
+                return std::to_string(h) + "h " + std::to_string(m) + "m";
+            };
+
             for (const auto &bee : snap.bees)
             {
                 auto status_color = bee.is_idle ? Color::Green : Color::Yellow;
                 auto job_str      = bee.current_job
                                         ? " #" + std::to_string(*bee.current_job)
+                                        : " -";
+                auto elapsed_str  = bee.job_start_ms
+                                        ? " " + fmt_elapsed(now_ms - *bee.job_start_ms)
                                         : " -";
                 auto host         = bee.hostname.empty() ? "unknown" : bee.hostname;
                 auto os           = bee.os.empty() ? "-" : bee.os;
@@ -172,7 +205,9 @@ Monitor::run()
                      text(" " + std::string(bee.is_idle ? "idle" : "busy") + " ")
                          | color(status_color) | size(WIDTH, EQUAL, 10),
                      separator(),
-                     text(job_str)}));
+                     text(job_str) | size(WIDTH, EQUAL, 14),
+                     separator(),
+                     text(elapsed_str) | color(Color::Yellow)}));
             }
         }
 

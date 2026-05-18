@@ -5,6 +5,7 @@
 #include "Job.hpp"
 
 #include <asio.hpp>
+#include <chrono>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -17,6 +18,7 @@ struct BeeEntry
     BeeId id{0};
     bool is_idle{true};
     std::optional<JobId> current_job;
+    std::optional<std::chrono::system_clock::time_point> job_start_time;
     std::string hostname;
     std::string os;
 };
