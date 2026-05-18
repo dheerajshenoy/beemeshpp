@@ -17,7 +17,17 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
 )
 
-FetchContent_MakeAvailable(asio)
+FetchContent_Declare(
+  ftxui
+  GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui.git
+  GIT_TAG        v5.0.0
+  GIT_SHALLOW    TRUE
+)
+
+set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(FTXUI_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(asio ftxui)
 
 add_library(asio_external INTERFACE)
 
@@ -31,6 +41,7 @@ add_executable(${PROJECT_NAME}
     src/Bee.cpp
     src/Connection.cpp
     src/Launcher.cpp
+    src/Monitor.cpp
 )
 
 target_compile_options(${PROJECT_NAME}
@@ -54,4 +65,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
     asio_external
     Threads::Threads
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
 )
