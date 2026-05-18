@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(BEEMESH_DEBUG_FLAGS "-ggdb -Wall -Wextra -Wpedantic -Werror")
-set(BEEMESH_RELEASE_FLAGS "-O3 -Wall -Wextra -Wpedantic -Werror")
 
 find_package(Threads REQUIRED)
 
@@ -43,16 +41,30 @@ add_executable(${PROJECT_NAME}
     src/Monitor.cpp
 )
 
-target_compile_options(${PROJECT_NAME}
-    PRIVATE
-    $<$<CONFIG:Debug>:${BEEMESH_DEBUG_FLAGS}>
-    $<$<CONFIG:Release>:${BEEMESH_RELEASE_FLAGS}>
-)
-
-target_compile_definitions(${PROJECT_NAME}
-    PRIVATE
-    BEEMESH_VERSION="${PROJECT_VERSION}"
-)
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /W4 /WX /utf-8 /permissive-
+        $<$<CONFIG:Debug>:/Zi>
+        $<$<CONFIG:Release>:/O2>
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        BEEMESH_VERSION="${PROJECT_VERSION}"
+        _WIN32_WINNT=0x0601
+        _CRT_SECURE_NO_WARNINGS
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_link_libraries(${PROJECT_NAME} PRIVATE dxgi)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall -Wextra -Wpedantic -Werror
+        $<$<CONFIG:Debug>:-ggdb>
+        $<$<CONFIG:Release>:-O3>
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        BEEMESH_VERSION="${PROJECT_VERSION}"
+    )
+endif()
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC

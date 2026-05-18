@@ -21,6 +21,9 @@ struct BeeEntry
     std::optional<std::chrono::system_clock::time_point> job_start_time;
     std::string hostname;
     std::string os;
+    std::optional<JobId> last_completed_job;
+    std::string last_job_output;
+    std::optional<int> last_exit_code;
 };
 
 class Hive

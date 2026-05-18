@@ -61,13 +61,13 @@ private:
 
 private:
     asio::io_context m_io_context;
+    std::string m_auth_token;
+    std::string m_host;
+    std::string m_port;
     asio::ip::tcp::socket m_socket;
     BeeId m_id;
     HostInfo m_info;
     Job *m_job{nullptr};
-    std::string m_auth_token;
-    std::string m_host;
-    std::string m_port;
     std::string m_buffer;
     Status m_status{Status::Idle};
 };

@@ -9,6 +9,10 @@
 #include <print>
 #include <thread>
 
+#if !defined(_WIN32)
+    #include <sys/wait.h>
+#endif
+
 Bee::Bee(const std::string &auth_token, const std::string &host,
          const std::string &port)
     : m_auth_token(auth_token), m_host(host), m_port(port),
@@ -147,25 +151,37 @@ Bee::handle_message(const std::string &message)
                         std::ofstream f(tmp_path, std::ios::binary);
                         f << payload;
                         f.close();
+#if !defined(_WIN32)
                         std::filesystem::permissions(
                             tmp_path,
                             std::filesystem::perms::owner_exec
                                 | std::filesystem::perms::owner_read
                                 | std::filesystem::perms::owner_write,
                             std::filesystem::perm_options::add);
+#endif
                     }
 
                     std::string cmd
                         = tmp_path.empty() ? payload : tmp_path.string();
 
                     std::string output;
+                    int exit_code = -1;
+#if defined(_WIN32)
+                    FILE *pipe = _popen(cmd.c_str(), "r");
+#else
                     FILE *pipe = popen(cmd.c_str(), "r");
+#endif
                     if (pipe)
                     {
                         char buf[256];
                         while (fgets(buf, sizeof(buf), pipe))
                             output += buf;
-                        pclose(pipe);
+#if defined(_WIN32)
+                        exit_code = _pclose(pipe);
+#else
+                        int status = pclose(pipe);
+                        exit_code  = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
                     }
 
                     if (!tmp_path.empty())
@@ -174,15 +190,17 @@ Bee::handle_message(const std::string &message)
                     // Post result back to the io_context thread for safe socket
                     // access.
                     asio::post(m_io_context,
-                               [this, job_id, output = std::move(output)]()
+                               [this, job_id, exit_code,
+                                output = std::move(output)]()
                     {
                         m_status = Status::Idle;
 
                         nlohmann::json result;
                         result["type"]
                             = Utils::to_string(MessageType::JOB_RESULT);
-                        result["data"]
-                            = {{"job_id", job_id}, {"output", output}};
+                        result["data"] = {{"job_id", job_id},
+                                          {"output", output},
+                                          {"exit_code", exit_code}};
 
                         asio::async_write(
                             m_socket,

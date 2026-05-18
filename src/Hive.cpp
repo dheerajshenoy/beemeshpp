@@ -152,7 +152,7 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
 
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
-        m_bees.push_back({conn, id, true, std::nullopt, std::nullopt, hostname, os});
+        m_bees.push_back({conn, id, true, std::nullopt, std::nullopt, hostname, os, std::nullopt, "", std::nullopt});
     }
 
     std::println("Bee {} registered ({})", id, hostname.empty() ? "unknown" : hostname);
@@ -167,7 +167,8 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
 {
     JobId job_id    = data.at("job_id").get<JobId>();
     std::string out = data.at("output").get<std::string>();
-    std::println("Job {} result:\n{}", job_id, out);
+    int exit_code   = data.value("exit_code", -1);
+    std::println("Job {} finished (exit {})\n{}", job_id, exit_code, out);
 
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
@@ -175,9 +176,12 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
         {
             if (entry.conn == conn)
             {
-                entry.is_idle        = true;
-                entry.current_job    = std::nullopt;
-                entry.job_start_time = std::nullopt;
+                entry.is_idle            = true;
+                entry.current_job        = std::nullopt;
+                entry.job_start_time     = std::nullopt;
+                entry.last_completed_job = job_id;
+                entry.last_job_output    = out;
+                entry.last_exit_code     = exit_code;
                 break;
             }
         }
@@ -276,6 +280,11 @@ Hive::broadcast_status()
                     bee["job_start_ms"] = std::chrono::duration_cast<std::chrono::milliseconds>(
                         entry.job_start_time->time_since_epoch()).count();
             }
+            if (entry.last_completed_job)
+                bee["last_job_id"] = *entry.last_completed_job;
+            bee["last_output"] = entry.last_job_output;
+            if (entry.last_exit_code)
+                bee["last_exit_code"] = *entry.last_exit_code;
             bees_json.push_back(bee);
             if (!entry.is_idle)
                 ++running;

@@ -26,6 +26,9 @@ private:
         bool is_idle;
         std::optional<uint64_t> current_job;
         std::optional<int64_t> job_start_ms;
+        std::optional<uint64_t> last_job_id;
+        std::optional<int> last_exit_code;
+        std::string last_output;
         std::string hostname;
         std::string os;
     };

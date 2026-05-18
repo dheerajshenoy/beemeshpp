@@ -11,6 +11,13 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+    #define NOMINMAX
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    #include <dxgi.h>
+#endif
+
 #if defined(__APPLE__)
     #include <sys/sysctl.h>
 #endif
@@ -192,7 +199,6 @@ namespace Utils
                         else if (line.rfind("Video Memory:", 0) == 0)
                         {
                             // "Video Memory:      24564 MB"
-                            auto pos = line.find_last_of(' ');
                             auto mpos = line.rfind("MB");
                             if (mpos != std::string::npos)
                                 gpu.VRAM_mb = static_cast<unsigned>(
