@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(beemesh VERSION 0.1.0 LANGUAGES CXX)
+project(beemesh VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +30,7 @@ add_executable(${PROJECT_NAME}
     src/Hive.cpp
     src/Bee.cpp
     src/Connection.cpp
+    src/Launcher.cpp
 )
 
 target_compile_options(${PROJECT_NAME}
