@@ -22,6 +22,12 @@ The hive accepts connections from bees and launchers. Run this on the machine th
 beemesh hive --host 0.0.0.0 --port 9000 --auth-token mytoken
 ```
 
+To benchmark each bee when it registers (measures CPU GFLOPS and memory bandwidth before it accepts jobs):
+
+```bash
+beemesh hive --host 0.0.0.0 --port 9000 --auth-token mytoken --benchmark
+```
+
 ### Register a bee
 
 Bees connect to the hive and wait for jobs to execute. Run this on each worker machine:
@@ -47,12 +53,41 @@ beemesh launch --host <hive-ip> --port 9000 --payload /path/to/script.py
 
 Results are printed on the hive once the bee finishes execution.
 
+**Job directives** (`#BEEMESH`) can be embedded in scripts to specify resource requirements. The hive will only dispatch the job to a bee that satisfies them:
+
+```bash
+#!/bin/bash
+#BEEMESH --name my-analysis
+#BEEMESH --cpus 4
+#BEEMESH --mem 16G
+#BEEMESH --gpu
+#BEEMESH --target my-hostname
+
+python train.py
+```
+
+| Directive | Description |
+|---|---|
+| `--name <string>` | Human-readable job name shown in the monitor |
+| `--cpus <n>` | Minimum CPU cores required |
+| `--mem <size>` | Minimum RAM required (`512M`, `16G`, etc.) |
+| `--gpu` | Requires a bee with a GPU |
+| `--target <hostname>` | Pin job to a specific bee by hostname |
+
 ### Monitoring
 
-The hive provides a simple dashboard to see connected bees and pending jobs:
+The hive provides a live dashboard to see connected bees, their status, and job stats:
 
 ```bash
 beemesh monitor --host <hive-ip> --port 9000
 ```
+
+| Key | Action |
+|---|---|
+| `j` / `↓` | Move selection down |
+| `k` / `↑` | Move selection up |
+| `Enter` | Open detail panel (job output, exit code, benchmark scores) |
+| `Esc` / `Enter` | Close detail panel |
+| `q` | Quit |
 
 <img src="./images/monitor.png" alt="Monitor Dashboard" width="600">
