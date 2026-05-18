@@ -9,7 +9,8 @@ int
 main(int argc, char *argv[])
 {
     // Create the main argument parser
-    argparse::ArgumentParser parser("BeeMesh", BEEMESH_VERSION);
+    argparse::ArgumentParser parser("BeeMesh", BEEMESH_VERSION,
+                                    argparse::default_arguments::none);
 
     parser.add_argument("-v", "--verbose")
         .help("Increase output verbosity")
@@ -149,7 +150,7 @@ main(int argc, char *argv[])
         std::string auth_token = hive_command.get<std::string>("--auth-token");
         std::string host       = hive_command.get<std::string>("--host");
         std::string port       = hive_command.get<std::string>("--port");
-        bool        benchmark  = hive_command.get<bool>("--benchmark");
+        bool benchmark         = hive_command.get<bool>("--benchmark");
 
         Hive hive(auth_token, host, port, benchmark);
         hive.run();
