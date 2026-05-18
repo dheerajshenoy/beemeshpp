@@ -19,6 +19,8 @@
 - Add `monitor` subcommand with a live ftxui TUI showing connected bees, their status, and job stats (pending/running/completed); hive broadcasts a status snapshot on every state change
 - Monitor shows the TUI immediately on TCP connect even with 0 bees
 - Monitor shows a clear error message if the hive is unreachable
+- Bees report real device info on registration (CPU model/cores/threads/arch, GPU vendor/name/VRAM, RAM, OS) using OS-level APIs (`/proc/cpuinfo`, `/sys/class/drm/`, `sysctlbyname` on macOS)
+- Monitor dashboard shows hostname and OS columns for each connected bee
 
 ## 0.1.0
 

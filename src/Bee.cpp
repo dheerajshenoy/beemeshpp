@@ -39,7 +39,7 @@ Bee::run()
         = {{"type", Utils::to_string(MessageType::BEE_REGISTRATION)},
            {"data",
             {{"auth_token", m_auth_token},
-             {"device_info", "<device info>"}}}};
+             {"device_info", nlohmann::json(Utils::get_host_info())}}}};
 
     asio::async_write(m_socket, asio::buffer(data.dump() + MSG_DELIMITER),
                       [this](const std::error_code &ec, std::size_t)

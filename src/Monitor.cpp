@@ -66,8 +66,10 @@ Monitor::connect_and_read()
                 for (const auto &bee : data.at("bees"))
                 {
                     BeeInfo info;
-                    info.id      = bee.at("id").get<uint64_t>();
-                    info.is_idle = bee.at("is_idle").get<bool>();
+                    info.id       = bee.at("id").get<uint64_t>();
+                    info.is_idle  = bee.at("is_idle").get<bool>();
+                    info.hostname = bee.value("hostname", "");
+                    info.os       = bee.value("os", "");
                     if (bee.contains("job_id"))
                         info.current_job = bee.at("job_id").get<uint64_t>();
                     m_state.bees.push_back(info);
@@ -133,11 +135,15 @@ Monitor::run()
         // ── bees table ─────────────────────────────────────────────
         Elements rows;
         rows.push_back(
-            hbox({text(" ID     ") | bold,
+            hbox({text(" ID  ") | bold | size(WIDTH, EQUAL, 6),
+                  separator(),
+                  text(" Hostname          ") | bold | size(WIDTH, EQUAL, 20),
+                  separator(),
+                  text(" OS       ") | bold | size(WIDTH, EQUAL, 10),
                   separator(),
                   text(" Status  ") | bold | size(WIDTH, EQUAL, 10),
                   separator(),
-                  text(" Current Job ") | bold}) | color(Color::White));
+                  text(" Job ") | bold}) | color(Color::White));
         rows.push_back(separator());
 
         if (snap.bees.empty())
@@ -151,11 +157,17 @@ Monitor::run()
             {
                 auto status_color = bee.is_idle ? Color::Green : Color::Yellow;
                 auto job_str      = bee.current_job
-                                        ? " job #" + std::to_string(*bee.current_job)
+                                        ? " #" + std::to_string(*bee.current_job)
                                         : " -";
+                auto host         = bee.hostname.empty() ? "unknown" : bee.hostname;
+                auto os           = bee.os.empty() ? "-" : bee.os;
                 rows.push_back(hbox(
                     {text(" " + std::to_string(bee.id) + " ")
-                         | size(WIDTH, EQUAL, 8),
+                         | size(WIDTH, EQUAL, 6),
+                     separator(),
+                     text(" " + host + " ") | size(WIDTH, EQUAL, 20),
+                     separator(),
+                     text(" " + os + " ") | size(WIDTH, EQUAL, 10),
                      separator(),
                      text(" " + std::string(bee.is_idle ? "idle" : "busy") + " ")
                          | color(status_color) | size(WIDTH, EQUAL, 10),

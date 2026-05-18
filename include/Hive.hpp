@@ -17,6 +17,8 @@ struct BeeEntry
     BeeId id{0};
     bool is_idle{true};
     std::optional<JobId> current_job;
+    std::string hostname;
+    std::string os;
 };
 
 class Hive

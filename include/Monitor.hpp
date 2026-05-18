@@ -24,6 +24,8 @@ private:
         uint64_t id;
         bool is_idle;
         std::optional<uint64_t> current_job;
+        std::string hostname;
+        std::string os;
     };
 
     struct State

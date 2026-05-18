@@ -142,12 +142,20 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
     response["data"] = {{"bee_id", id}};
     conn->write(response.dump() + "\n");
 
+    std::string hostname, os;
+    if (data.contains("device_info"))
     {
-        std::lock_guard<std::mutex> lock(m_bees_mutex);
-        m_bees.push_back({conn, id, true, std::nullopt});
+        const auto &di = data.at("device_info");
+        hostname       = di.value("name", "");
+        os             = di.value("OS", "");
     }
 
-    std::println("Bee {} registered", id);
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        m_bees.push_back({conn, id, true, std::nullopt, hostname, os});
+    }
+
+    std::println("Bee {} registered ({})", id, hostname.empty() ? "unknown" : hostname);
     asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
     asio::post(m_io_context, [this]() { broadcast_status(); });
     return true;
@@ -256,8 +264,10 @@ Hive::broadcast_status()
         for (const auto &entry : m_bees)
         {
             nlohmann::json bee;
-            bee["id"]      = entry.id;
-            bee["is_idle"] = entry.is_idle;
+            bee["id"]       = entry.id;
+            bee["is_idle"]  = entry.is_idle;
+            bee["hostname"] = entry.hostname;
+            bee["os"]       = entry.os;
             if (entry.current_job)
                 bee["job_id"] = *entry.current_job;
             bees_json.push_back(bee);
