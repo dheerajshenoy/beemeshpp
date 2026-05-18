@@ -8,7 +8,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(BEEMESH_DEBUG_FLAGS "-ggdb -Wall -Wextra -Wpedantic -Werror")
 set(BEEMESH_RELEASE_FLAGS "-O3 -Wall -Wextra -Wpedantic -Werror")
 
-# 6. Asio requires threads
 find_package(Threads REQUIRED)
 
 include(FetchContent)
@@ -59,7 +58,6 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC
     ${PROJECT_SOURCE_DIR}/include
 )
-
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
