@@ -16,6 +16,9 @@
 - Auth token validation on bee registration — connections with a bad token are rejected
 - Full async connection handling in the hive — initial handshake no longer blocks the io_context
 - Bees track idle/busy state; the hive only dispatches to idle bees
+- Add `monitor` subcommand with a live ftxui TUI showing connected bees, their status, and job stats (pending/running/completed); hive broadcasts a status snapshot on every state change
+- Monitor shows the TUI immediately on TCP connect even with 0 bees
+- Monitor shows a clear error message if the hive is unreachable
 
 ## 0.1.0
 

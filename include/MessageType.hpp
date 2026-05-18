@@ -10,5 +10,7 @@ enum class MessageType
     STATUS_CHECK,
     ERROR_REPORT,
     JOB_SUBMISSION,
+    MONITOR_CONNECT,
+    STATUS_SNAPSHOT,
     COUNT
 };

@@ -1,5 +1,6 @@
 #include "Hive.hpp"
 #include "Launcher.hpp"
+#include "Monitor.hpp"
 #include "argparse.hpp"
 
 #include <print>
@@ -121,7 +122,11 @@ main(int argc, char *argv[])
 
     if (parser.is_subcommand_used("monitor"))
     {
-        // TODO: Implement monitor functionality
+        std::string host = monitor_command.get<std::string>("--host");
+        std::string port = monitor_command.get<std::string>("--port");
+
+        Monitor monitor(host, port);
+        monitor.run();
     }
 
     else if (parser.is_subcommand_used("launch"))

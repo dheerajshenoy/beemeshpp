@@ -165,7 +165,8 @@ namespace Utils
         MESSAGE_TYPE_STRINGS
         = {"bee_registration", "bee_id_assignment", "job_assignment",
            "job_result",       "status_update",     "status_check",
-           "error_report",     "job_submission"};
+           "error_report",     "job_submission",    "monitor_connect",
+           "status_snapshot"};
 
     inline std::string_view to_string(MessageType type)
     {

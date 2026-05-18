@@ -39,6 +39,10 @@ private:
                        const nlohmann::json &data);
     void on_bee_disconnect(const std::shared_ptr<Connection> &conn);
 
+    void register_monitor(const std::shared_ptr<Connection> &conn);
+    void on_monitor_disconnect(const std::shared_ptr<Connection> &conn);
+    void broadcast_status();
+
     void add_job(const nlohmann::json &data);
     void assign_jobs_to_bees();
     void handle_heartbeat();
@@ -56,4 +60,8 @@ private:
     std::queue<JobId> m_pending_jobs;
     std::unordered_map<JobId, std::unique_ptr<Job>> m_all_jobs;
     std::mutex m_jobs_mutex;
+    int m_completed_jobs{0};
+
+    std::shared_ptr<Connection> m_monitor;
+    std::mutex m_monitor_mutex;
 };

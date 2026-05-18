@@ -1,0 +1,202 @@
+#include "Monitor.hpp"
+
+#include "MessageType.hpp"
+#include "Utils.hpp"
+
+#include <asio.hpp>
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <nlohmann/json.hpp>
+#include <thread>
+
+using namespace ftxui;
+
+Monitor::Monitor(const std::string &host, const std::string &port)
+    : m_host(host), m_port(port)
+{
+}
+
+// Runs in a background thread: connects to the hive, sends MONITOR_CONNECT,
+// then loops reading STATUS_SNAPSHOT messages and updating shared state.
+void
+Monitor::connect_and_read()
+{
+    try
+    {
+        asio::io_context io;
+        asio::ip::tcp::socket socket(io);
+        asio::ip::tcp::resolver resolver(io);
+
+        // Throws immediately if the hive is not reachable.
+        asio::connect(socket, resolver.resolve(m_host, m_port));
+
+        // TCP connection established — show the TUI now, before any snapshot.
+        {
+            std::lock_guard lock(m_state_mutex);
+            m_state.connected = true;
+        }
+        if (auto *s = m_screen.load())
+            s->PostEvent(Event::Custom);
+
+        nlohmann::json hello;
+        hello["type"] = Utils::to_string(MessageType::MONITOR_CONNECT);
+        hello["data"] = nullptr;
+        asio::write(socket, asio::buffer(hello.dump() + "\n"));
+
+        std::string buf;
+        while (true)
+        {
+            asio::streambuf sbuf;
+            asio::read_until(socket, sbuf, "\n");
+            std::istream is(&sbuf);
+            std::string line;
+            std::getline(is, line);
+
+            auto json_msg = nlohmann::json::parse(line);
+            auto type     = Utils::message_type_from_string(
+                json_msg.at("type").get<std::string>());
+
+            if (type == MessageType::STATUS_SNAPSHOT)
+            {
+                const auto &data = json_msg.at("data");
+
+                std::lock_guard lock(m_state_mutex);
+                m_state.bees.clear();
+                for (const auto &bee : data.at("bees"))
+                {
+                    BeeInfo info;
+                    info.id      = bee.at("id").get<uint64_t>();
+                    info.is_idle = bee.at("is_idle").get<bool>();
+                    if (bee.contains("job_id"))
+                        info.current_job = bee.at("job_id").get<uint64_t>();
+                    m_state.bees.push_back(info);
+                }
+                m_state.pending   = data.at("pending").get<int>();
+                m_state.running   = data.at("running").get<int>();
+                m_state.completed = data.at("completed").get<int>();
+            }
+
+            if (auto *s = m_screen.load())
+                s->PostEvent(Event::Custom);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::lock_guard lock(m_state_mutex);
+        m_state.connected = false;
+        m_state.error     = e.what();
+        if (auto *s = m_screen.load())
+            s->PostEvent(Event::Custom);
+    }
+}
+
+void
+Monitor::run()
+{
+    auto screen = ScreenInteractive::Fullscreen();
+    m_screen.store(&screen);
+
+    std::thread([this]() { connect_and_read(); }).detach();
+
+    auto renderer = Renderer([this]() -> Element
+    {
+        State snap;
+        {
+            std::lock_guard lock(m_state_mutex);
+            snap = m_state;
+        }
+
+        // ── title ──────────────────────────────────────────────────
+        auto title = text(" BeeMesh Monitor ") | bold | color(Color::Cyan)
+                     | hcenter;
+
+        // ── connection status ──────────────────────────────────────
+        if (!snap.error.empty())
+        {
+            return vbox({title, separator(),
+                         text(" Could not connect to hive: " + snap.error)
+                             | color(Color::Red) | hcenter,
+                         text(" (Is the hive running?) ")
+                             | color(Color::GrayDark) | hcenter})
+                   | border;
+        }
+
+        if (!snap.connected)
+        {
+            return vbox({title, separator(),
+                         text(" Connecting to " + m_host + ":" + m_port + "…")
+                             | color(Color::Yellow) | hcenter})
+                   | border;
+        }
+
+        // ── bees table ─────────────────────────────────────────────
+        Elements rows;
+        rows.push_back(
+            hbox({text(" ID     ") | bold,
+                  separator(),
+                  text(" Status  ") | bold | size(WIDTH, EQUAL, 10),
+                  separator(),
+                  text(" Current Job ") | bold}) | color(Color::White));
+        rows.push_back(separator());
+
+        if (snap.bees.empty())
+        {
+            rows.push_back(
+                text(" No bees connected ") | color(Color::GrayDark) | hcenter);
+        }
+        else
+        {
+            for (const auto &bee : snap.bees)
+            {
+                auto status_color = bee.is_idle ? Color::Green : Color::Yellow;
+                auto job_str      = bee.current_job
+                                        ? " job #" + std::to_string(*bee.current_job)
+                                        : " -";
+                rows.push_back(hbox(
+                    {text(" " + std::to_string(bee.id) + " ")
+                         | size(WIDTH, EQUAL, 8),
+                     separator(),
+                     text(" " + std::string(bee.is_idle ? "idle" : "busy") + " ")
+                         | color(status_color) | size(WIDTH, EQUAL, 10),
+                     separator(),
+                     text(job_str)}));
+            }
+        }
+
+        auto bees_box = vbox(rows) | border;
+
+        // ── stats bar ──────────────────────────────────────────────
+        auto stats = hbox({
+            text(" Pending ")  | bold,
+            text(std::to_string(snap.pending))   | color(Color::Blue),
+            text("   Running ") | bold,
+            text(std::to_string(snap.running))   | color(Color::Yellow),
+            text("   Completed ") | bold,
+            text(std::to_string(snap.completed)) | color(Color::Green),
+            text("  "),
+        });
+
+        // ── hint ───────────────────────────────────────────────────
+        auto hint = text(" q  quit ") | color(Color::GrayDark) | align_right;
+
+        return vbox({title, separator(), bees_box, separator(), stats,
+                     separator(), hint})
+               | border;
+    });
+
+    // Consume the custom redraw events posted from the network thread;
+    // pass everything else through for default handling (resize, etc.).
+    auto component = CatchEvent(renderer, [&screen](Event event)
+    {
+        if (event == Event::Character('q') || event == Event::Character('Q'))
+        {
+            screen.ExitLoopClosure()();
+            return true;
+        }
+        return event == Event::Custom;
+    });
+
+    screen.Loop(component);
+    m_screen.store(nullptr);
+}

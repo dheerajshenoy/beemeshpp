@@ -64,9 +64,6 @@ Hive::do_accept()
     });
 }
 
-// Each incoming connection runs fully async from here — no blocking reads.
-// A shared bool tracks whether the connection has completed registration so
-// the same callback handles both the initial handshake and subsequent messages.
 void
 Hive::handle_connection(asio::ip::tcp::socket socket)
 {
@@ -86,6 +83,11 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
 
                 case MessageType::JOB_SUBMISSION:
                     add_job(data);
+                    break;
+
+                case MessageType::MONITOR_CONNECT:
+                    register_monitor(conn);
+                    *is_registered = true;
                     break;
 
                 default:
@@ -110,10 +112,13 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
             }
         }
     },
-        [this, conn]() { on_bee_disconnect(conn); });
+        [this, conn]()
+    {
+        on_bee_disconnect(conn);
+        on_monitor_disconnect(conn);
+    });
 }
 
-// Returns true if authentication passed and the bee was registered.
 bool
 Hive::register_bee(const std::shared_ptr<Connection> &conn,
                    const nlohmann::json &data)
@@ -144,6 +149,7 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
 
     std::println("Bee {} registered", id);
     asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    asio::post(m_io_context, [this]() { broadcast_status(); });
     return true;
 }
 
@@ -161,14 +167,20 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
         {
             if (entry.conn == conn)
             {
-                entry.is_idle    = true;
+                entry.is_idle     = true;
                 entry.current_job = std::nullopt;
                 break;
             }
         }
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_jobs_mutex);
+        ++m_completed_jobs;
+    }
+
     asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    asio::post(m_io_context, [this]() { broadcast_status(); });
 }
 
 void
@@ -183,7 +195,7 @@ Hive::on_bee_disconnect(const std::shared_ptr<Connection> &conn)
         { return e.conn == conn; });
 
         if (it == m_bees.end())
-            return; // was a launcher or unregistered connection
+            return;
 
         std::println("Bee {} disconnected", it->id);
         requeue_job = it->current_job;
@@ -197,6 +209,78 @@ Hive::on_bee_disconnect(const std::shared_ptr<Connection> &conn)
         std::println("Re-queued job {} from disconnected bee", *requeue_job);
         asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
     }
+
+    asio::post(m_io_context, [this]() { broadcast_status(); });
+}
+
+void
+Hive::register_monitor(const std::shared_ptr<Connection> &conn)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_monitor_mutex);
+        if (m_monitor)
+            std::println("Hive: replacing existing monitor connection");
+        m_monitor = conn;
+    }
+
+    std::println("Monitor connected");
+    broadcast_status();
+}
+
+void
+Hive::on_monitor_disconnect(const std::shared_ptr<Connection> &conn)
+{
+    std::lock_guard<std::mutex> lock(m_monitor_mutex);
+    if (m_monitor == conn)
+    {
+        m_monitor = nullptr;
+        std::println("Monitor disconnected");
+    }
+}
+
+void
+Hive::broadcast_status()
+{
+    std::shared_ptr<Connection> monitor;
+    {
+        std::lock_guard<std::mutex> lock(m_monitor_mutex);
+        monitor = m_monitor;
+    }
+    if (!monitor)
+        return;
+
+    nlohmann::json bees_json = nlohmann::json::array();
+    int running              = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        for (const auto &entry : m_bees)
+        {
+            nlohmann::json bee;
+            bee["id"]      = entry.id;
+            bee["is_idle"] = entry.is_idle;
+            if (entry.current_job)
+                bee["job_id"] = *entry.current_job;
+            bees_json.push_back(bee);
+            if (!entry.is_idle)
+                ++running;
+        }
+    }
+
+    int pending, completed;
+    {
+        std::lock_guard<std::mutex> lock(m_jobs_mutex);
+        pending   = static_cast<int>(m_pending_jobs.size());
+        completed = m_completed_jobs;
+    }
+
+    nlohmann::json msg;
+    msg["type"]              = Utils::to_string(MessageType::STATUS_SNAPSHOT);
+    msg["data"]["bees"]      = bees_json;
+    msg["data"]["pending"]   = pending;
+    msg["data"]["running"]   = running;
+    msg["data"]["completed"] = completed;
+
+    monitor->write(msg.dump() + "\n");
 }
 
 void
@@ -220,6 +304,7 @@ Hive::add_job(const nlohmann::json &data)
     }
 
     asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    asio::post(m_io_context, [this]() { broadcast_status(); });
 }
 
 void
@@ -247,7 +332,7 @@ Hive::assign_jobs_to_bees()
                        {"filename", job->filename()}};
         entry.conn->write(msg.dump() + "\n");
 
-        entry.is_idle    = false;
+        entry.is_idle     = false;
         entry.current_job = job_id;
 
         std::println("Assigned job {} to bee {}", job_id, entry.id);
