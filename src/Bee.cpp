@@ -31,7 +31,6 @@ Bee::init_connection()
     asio::connect(m_socket, resolver.resolve(m_host, m_port));
 }
 
-// Inside Bee.cpp
 void
 Bee::run()
 {
@@ -124,16 +123,18 @@ Bee::handle_message(const std::string &message)
 
             case MessageType::JOB_ASSIGNMENT:
             {
-                JobId job_id        = json_msg.at("data").at("job_id").get<JobId>();
-                std::string payload = json_msg.at("data").at("payload").get<std::string>();
+                JobId job_id = json_msg.at("data").at("job_id").get<JobId>();
+                std::string payload
+                    = json_msg.at("data").at("payload").get<std::string>();
 
-                std::println("Bee [id: {}] executing job {}: '{}'", m_id, job_id, payload);
+                std::println("Bee [id: {}] executing job {}: '{}'", m_id,
+                             job_id, payload);
                 m_status = Status::Running;
 
                 // Run the job on a worker thread so the io_context stays
                 // responsive (heartbeats, future assignments) during execution.
-                std::string filename =
-                    json_msg.at("data").value("filename", "");
+                std::string filename
+                    = json_msg.at("data").value("filename", "");
 
                 std::thread([this, job_id, payload, filename]()
                 {
@@ -141,8 +142,8 @@ Bee::handle_message(const std::string &message)
                     if (!filename.empty())
                     {
                         tmp_path = std::filesystem::temp_directory_path()
-                                   / ("beemesh_" + std::to_string(job_id)
-                                      + "_" + filename);
+                                   / ("beemesh_" + std::to_string(job_id) + "_"
+                                      + filename);
                         std::ofstream f(tmp_path, std::ios::binary);
                         f << payload;
                         f.close();
@@ -154,8 +155,8 @@ Bee::handle_message(const std::string &message)
                             std::filesystem::perm_options::add);
                     }
 
-                    std::string cmd =
-                        tmp_path.empty() ? payload : tmp_path.string();
+                    std::string cmd
+                        = tmp_path.empty() ? payload : tmp_path.string();
 
                     std::string output;
                     FILE *pipe = popen(cmd.c_str(), "r");
@@ -170,15 +171,18 @@ Bee::handle_message(const std::string &message)
                     if (!tmp_path.empty())
                         std::filesystem::remove(tmp_path);
 
-                    // Post result back to the io_context thread for safe socket access.
+                    // Post result back to the io_context thread for safe socket
+                    // access.
                     asio::post(m_io_context,
                                [this, job_id, output = std::move(output)]()
                     {
                         m_status = Status::Idle;
 
                         nlohmann::json result;
-                        result["type"] = Utils::to_string(MessageType::JOB_RESULT);
-                        result["data"] = {{"job_id", job_id}, {"output", output}};
+                        result["type"]
+                            = Utils::to_string(MessageType::JOB_RESULT);
+                        result["data"]
+                            = {{"job_id", job_id}, {"output", output}};
 
                         asio::async_write(
                             m_socket,
@@ -188,8 +192,9 @@ Bee::handle_message(const std::string &message)
                             if (!ec)
                                 std::println("Sent result for job {}", job_id);
                             else
-                                std::cerr << "Error sending result: "
-                                          << ec.message() << "\n";
+                                std::cerr
+                                    << "Error sending result: " << ec.message()
+                                    << "\n";
                         });
                     });
                 }).detach();
@@ -198,7 +203,6 @@ Bee::handle_message(const std::string &message)
             }
 
             case MessageType::STATUS_UPDATE:
-                // handle status
                 break;
 
             case MessageType::STATUS_CHECK:

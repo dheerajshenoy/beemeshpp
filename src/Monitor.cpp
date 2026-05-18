@@ -10,6 +10,8 @@
 #include <nlohmann/json.hpp>
 #include <thread>
 
+#define REFRESH_INTERVAL_SECONDS 5
+
 using namespace ftxui;
 
 Monitor::Monitor(const std::string &host, const std::string &port)
@@ -73,7 +75,8 @@ Monitor::connect_and_read()
                     if (bee.contains("job_id"))
                         info.current_job = bee.at("job_id").get<uint64_t>();
                     if (bee.contains("job_start_ms"))
-                        info.job_start_ms = bee.at("job_start_ms").get<int64_t>();
+                        info.job_start_ms
+                            = bee.at("job_start_ms").get<int64_t>();
                     m_state.bees.push_back(info);
                 }
                 m_state.pending   = data.at("pending").get<int>();
@@ -108,7 +111,8 @@ Monitor::run()
     {
         while (m_screen.load())
         {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(
+                std::chrono::seconds(REFRESH_INTERVAL_SECONDS));
             if (auto *s = m_screen.load())
                 s->PostEvent(Event::Custom);
         }
@@ -123,8 +127,8 @@ Monitor::run()
         }
 
         // ── title ──────────────────────────────────────────────────
-        auto title = text(" BeeMesh Monitor ") | bold | color(Color::Cyan)
-                     | hcenter;
+        auto title
+            = text(" BeeMesh Monitor ") | bold | color(Color::Cyan) | hcenter;
 
         // ── connection status ──────────────────────────────────────
         if (!snap.error.empty())
@@ -148,8 +152,7 @@ Monitor::run()
         // ── bees table ─────────────────────────────────────────────
         Elements rows;
         rows.push_back(
-            hbox({text(" ID  ") | bold | size(WIDTH, EQUAL, 6),
-                  separator(),
+            hbox({text(" ID  ") | bold | size(WIDTH, EQUAL, 6), separator(),
                   text(" Hostname          ") | bold | size(WIDTH, EQUAL, 20),
                   separator(),
                   text(" OS       ") | bold | size(WIDTH, EQUAL, 10),
@@ -157,57 +160,60 @@ Monitor::run()
                   text(" Status  ") | bold | size(WIDTH, EQUAL, 10),
                   separator(),
                   text(" Job      ") | bold | size(WIDTH, EQUAL, 14),
-                  separator(),
-                  text(" Elapsed ") | bold}) | color(Color::White));
+                  separator(), text(" Elapsed ") | bold})
+            | color(Color::White));
         rows.push_back(separator());
 
         if (snap.bees.empty())
         {
-            rows.push_back(
-                text(" No bees connected ") | color(Color::GrayDark) | hcenter);
+            rows.push_back(text(" No bees connected ") | color(Color::GrayDark)
+                           | hcenter);
         }
         else
         {
-            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
+            auto now_ms
+                = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
 
             auto fmt_elapsed = [](int64_t ms) -> std::string
             {
                 int s = static_cast<int>(ms / 1000);
                 if (s < 60)
                     return std::to_string(s) + "s";
-                int m = s / 60; s %= 60;
+                int m = s / 60;
+                s %= 60;
                 if (m < 60)
                     return std::to_string(m) + "m " + std::to_string(s) + "s";
-                int h = m / 60; m %= 60;
+                int h = m / 60;
+                m %= 60;
                 return std::to_string(h) + "h " + std::to_string(m) + "m";
             };
 
             for (const auto &bee : snap.bees)
             {
                 auto status_color = bee.is_idle ? Color::Green : Color::Yellow;
-                auto job_str      = bee.current_job
-                                        ? " #" + std::to_string(*bee.current_job)
-                                        : " -";
-                auto elapsed_str  = bee.job_start_ms
-                                        ? " " + fmt_elapsed(now_ms - *bee.job_start_ms)
-                                        : " -";
-                auto host         = bee.hostname.empty() ? "unknown" : bee.hostname;
-                auto os           = bee.os.empty() ? "-" : bee.os;
+                auto job_str = bee.current_job
+                                   ? " #" + std::to_string(*bee.current_job)
+                                   : " -";
+                auto elapsed_str
+                    = bee.job_start_ms
+                          ? " " + fmt_elapsed(now_ms - *bee.job_start_ms)
+                          : " -";
+                auto host = bee.hostname.empty() ? "unknown" : bee.hostname;
+                auto os   = bee.os.empty() ? "-" : bee.os;
                 rows.push_back(hbox(
                     {text(" " + std::to_string(bee.id) + " ")
                          | size(WIDTH, EQUAL, 6),
                      separator(),
                      text(" " + host + " ") | size(WIDTH, EQUAL, 20),
+                     separator(), text(" " + os + " ") | size(WIDTH, EQUAL, 10),
                      separator(),
-                     text(" " + os + " ") | size(WIDTH, EQUAL, 10),
-                     separator(),
-                     text(" " + std::string(bee.is_idle ? "idle" : "busy") + " ")
+                     text(" " + std::string(bee.is_idle ? "idle" : "busy")
+                          + " ")
                          | color(status_color) | size(WIDTH, EQUAL, 10),
-                     separator(),
-                     text(job_str) | size(WIDTH, EQUAL, 14),
-                     separator(),
-                     text(elapsed_str) | color(Color::Yellow)}));
+                     separator(), text(job_str) | size(WIDTH, EQUAL, 14),
+                     separator(), text(elapsed_str) | color(Color::Yellow)}));
             }
         }
 
@@ -215,10 +221,10 @@ Monitor::run()
 
         // ── stats bar ──────────────────────────────────────────────
         auto stats = hbox({
-            text(" Pending ")  | bold,
-            text(std::to_string(snap.pending))   | color(Color::Blue),
+            text(" Pending ") | bold,
+            text(std::to_string(snap.pending)) | color(Color::Blue),
             text("   Running ") | bold,
-            text(std::to_string(snap.running))   | color(Color::Yellow),
+            text(std::to_string(snap.running)) | color(Color::Yellow),
             text("   Completed ") | bold,
             text(std::to_string(snap.completed)) | color(Color::Green),
             text("  "),
