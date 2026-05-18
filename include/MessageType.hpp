@@ -14,5 +14,6 @@ enum class MessageType
     STATUS_SNAPSHOT,
     BENCHMARK_REQUEST,
     BENCHMARK_RESULT,
+    JOB_OUTPUT,
     COUNT
 };

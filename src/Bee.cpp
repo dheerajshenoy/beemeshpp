@@ -14,6 +14,8 @@
 #include <thread>
 #include <vector>
 
+static constexpr int OUTPUT_FLUSH_MS = 200; // max ms between output chunks
+
 #if !defined(_WIN32)
     #include <sys/wait.h>
 #endif
@@ -41,26 +43,40 @@ Bee::init_connection()
 }
 
 void
+Bee::enqueue_write(std::string msg)
+{
+    m_write_queue.push_back(std::move(msg));
+    if (!m_writing)
+        do_write();
+}
+
+void
+Bee::do_write()
+{
+    if (m_write_queue.empty()) { m_writing = false; return; }
+    m_writing        = true;
+    const auto &front = m_write_queue.front();
+    asio::async_write(m_socket, asio::buffer(front),
+        [this](const std::error_code &ec, std::size_t)
+        {
+            m_write_queue.pop_front();
+            if (ec)
+                std::cerr << "Write error: " << ec.message() << "\n";
+            do_write();
+        });
+}
+
+void
 Bee::run()
 {
-    nlohmann::json data
+    nlohmann::json reg
         = {{"type", Utils::to_string(MessageType::BEE_REGISTRATION)},
            {"data",
             {{"auth_token", m_auth_token},
              {"device_info", nlohmann::json(Utils::get_host_info())}}}};
 
-    asio::async_write(m_socket, asio::buffer(data.dump() + MSG_DELIMITER),
-                      [this](const std::error_code &ec, std::size_t)
-    {
-        if (ec)
-        {
-            std::cerr << "Error sending registration to Hive: " << ec.message()
-                      << "\n";
-            return;
-        }
-        read_from_hive();
-    });
-
+    enqueue_write(reg.dump() + MSG_DELIMITER);
+    read_from_hive();
     m_io_context.run();
 }
 
@@ -204,8 +220,20 @@ Bee::handle_message(const std::string &message)
                     std::string cmd
                         = tmp_path.empty() ? payload : tmp_path.string();
 
-                    std::string output;
                     int exit_code = -1;
+
+                    auto flush_chunk = [&](std::string chunk)
+                    {
+                        asio::post(m_io_context,
+                            [this, job_id, chunk = std::move(chunk)]()
+                            {
+                                nlohmann::json msg;
+                                msg["type"] = Utils::to_string(MessageType::JOB_OUTPUT);
+                                msg["data"] = {{"job_id", job_id}, {"chunk", chunk}};
+                                enqueue_write(msg.dump() + MSG_DELIMITER);
+                            });
+                    };
+
 #if defined(_WIN32)
                     FILE *pipe = _popen(cmd.c_str(), "r");
 #else
@@ -214,8 +242,25 @@ Bee::handle_message(const std::string &message)
                     if (pipe)
                     {
                         char buf[256];
+                        std::string pending;
+                        auto last_flush = std::chrono::steady_clock::now();
+
                         while (fgets(buf, sizeof(buf), pipe))
-                            output += buf;
+                        {
+                            pending += buf;
+                            auto now     = std::chrono::steady_clock::now();
+                            auto elapsed = std::chrono::duration_cast<
+                                std::chrono::milliseconds>(now - last_flush).count();
+                            if (elapsed >= OUTPUT_FLUSH_MS || pending.size() >= 4096)
+                            {
+                                flush_chunk(std::move(pending));
+                                pending.clear();
+                                last_flush = now;
+                            }
+                        }
+                        if (!pending.empty())
+                            flush_chunk(std::move(pending));
+
 #if defined(_WIN32)
                         exit_code = _pclose(pipe);
 #else
@@ -227,33 +272,15 @@ Bee::handle_message(const std::string &message)
                     if (!tmp_path.empty())
                         std::filesystem::remove(tmp_path);
 
-                    // Post result back to the io_context thread for safe socket
-                    // access.
-                    asio::post(m_io_context,
-                               [this, job_id, exit_code,
-                                output = std::move(output)]()
+                    asio::post(m_io_context, [this, job_id, exit_code]()
                     {
                         m_status = Status::Idle;
-
                         nlohmann::json result;
-                        result["type"]
-                            = Utils::to_string(MessageType::JOB_RESULT);
+                        result["type"] = Utils::to_string(MessageType::JOB_RESULT);
                         result["data"] = {{"job_id", job_id},
-                                          {"output", output},
                                           {"exit_code", exit_code}};
-
-                        asio::async_write(
-                            m_socket,
-                            asio::buffer(result.dump() + MSG_DELIMITER),
-                            [job_id](const std::error_code &ec, std::size_t)
-                        {
-                            if (!ec)
-                                std::println("Sent result for job {}", job_id);
-                            else
-                                std::cerr
-                                    << "Error sending result: " << ec.message()
-                                    << "\n";
-                        });
+                        enqueue_write(result.dump() + MSG_DELIMITER);
+                        std::println("Job {} finished (exit {})", job_id, exit_code);
                     });
                 }).detach();
 
@@ -273,14 +300,7 @@ Bee::handle_message(const std::string &message)
                         nlohmann::json msg;
                         msg["type"] = Utils::to_string(MessageType::BENCHMARK_RESULT);
                         msg["data"] = nlohmann::json(result);
-                        asio::async_write(
-                            m_socket, asio::buffer(msg.dump() + MSG_DELIMITER),
-                            [](const std::error_code &ec, std::size_t)
-                            {
-                                if (ec)
-                                    std::cerr << "Error sending benchmark result: "
-                                              << ec.message() << "\n";
-                            });
+                        enqueue_write(msg.dump() + MSG_DELIMITER);
                     });
                 }).detach();
                 break;

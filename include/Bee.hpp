@@ -5,6 +5,7 @@
 
 #include <asio.hpp>
 #include <cstdint>
+#include <deque>
 #include <string>
 
 using BeeId = uint64_t;
@@ -58,6 +59,8 @@ private:
     void init_connection();
     void read_from_hive();
     void handle_message(const std::string &message);
+    void enqueue_write(std::string msg);
+    void do_write();
 
 private:
     asio::io_context m_io_context;
@@ -70,4 +73,6 @@ private:
     Job *m_job{nullptr};
     std::string m_buffer;
     Status m_status{Status::Idle};
+    std::deque<std::string> m_write_queue;
+    bool m_writing{false};
 };

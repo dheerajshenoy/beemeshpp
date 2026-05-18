@@ -107,6 +107,10 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
                     on_job_result(conn, data);
                     break;
 
+                case MessageType::JOB_OUTPUT:
+                    on_job_output(conn, data);
+                    break;
+
                 case MessageType::BENCHMARK_RESULT:
                     on_benchmark_result(conn, data);
                     break;
@@ -231,13 +235,33 @@ Hive::on_benchmark_result(const std::shared_ptr<Connection> &conn,
 }
 
 void
+Hive::on_job_output(const std::shared_ptr<Connection> &conn,
+                    const nlohmann::json &data)
+{
+    std::string chunk  = data.at("chunk").get<std::string>();
+
+    std::print("{}", chunk);
+
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        for (auto &entry : m_bees)
+        {
+            if (entry.conn == conn)
+            {
+                entry.last_job_output += chunk;
+                break;
+            }
+        }
+    }
+}
+
+void
 Hive::on_job_result(const std::shared_ptr<Connection> &conn,
                     const nlohmann::json &data)
 {
-    JobId job_id    = data.at("job_id").get<JobId>();
-    std::string out = data.at("output").get<std::string>();
-    int exit_code   = data.value("exit_code", -1);
-    std::println("Job {} finished (exit {})\n{}", job_id, exit_code, out);
+    JobId job_id  = data.at("job_id").get<JobId>();
+    int exit_code = data.value("exit_code", -1);
+    std::println("Job {} finished (exit {})", job_id, exit_code);
 
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
@@ -250,7 +274,6 @@ Hive::on_job_result(const std::shared_ptr<Connection> &conn,
                 entry.current_job_name   = {};
                 entry.job_start_time     = std::nullopt;
                 entry.last_completed_job = job_id;
-                entry.last_job_output    = out;
                 entry.last_exit_code     = exit_code;
                 break;
             }
@@ -474,6 +497,7 @@ Hive::assign_jobs_to_bees()
         entry.current_job       = job_id;
         entry.current_job_name  = reqs.name;
         entry.job_start_time    = std::chrono::system_clock::now();
+        entry.last_job_output   = {};
 
         std::println("Assigned job {} to bee {}", job_id, entry.id);
     }

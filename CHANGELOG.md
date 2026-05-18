@@ -38,6 +38,7 @@
   ```
 - Hive matches job requirements against bee capabilities (CPU cores, RAM, GPU) collected at registration time; a job stays queued until a satisfying bee is available
 - Monitor table shows job ID and name together (e.g. `#3 my-analysis`); detail panel also includes the name
+- Stream job output in real time: bees send `JOB_OUTPUT` chunks to the hive as the job runs (flushed every 200 ms or every 4096 bytes); hive prints and accumulates chunks; monitor detail panel shows live stdout/stderr without waiting for job completion
 
 ## 0.1.0
 

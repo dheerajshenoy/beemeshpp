@@ -51,6 +51,8 @@ private:
                       const nlohmann::json &data);
     void on_job_result(const std::shared_ptr<Connection> &conn,
                        const nlohmann::json &data);
+    void on_job_output(const std::shared_ptr<Connection> &conn,
+                       const nlohmann::json &data);
     void on_benchmark_result(const std::shared_ptr<Connection> &conn,
                              const nlohmann::json &data);
     void on_bee_disconnect(const std::shared_ptr<Connection> &conn);
