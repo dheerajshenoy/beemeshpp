@@ -73,6 +73,10 @@ python train.py
 | `--mem <size>` | Minimum RAM required (`512M`, `16G`, etc.) |
 | `--gpu` | Requires a bee with a GPU |
 | `--target <hostname>` | Pin job to a specific bee by hostname |
+| `--min-gflops <n>` | Minimum CPU benchmark score required (GFLOPS) |
+| `--min-mem-bw <n>` | Minimum memory bandwidth required (GB/s) |
+
+Jobs stay queued until a bee satisfying all directives is available. When multiple bees are eligible, the hive picks the one with the highest benchmark score (`cpu_gflops + mem_bandwidth_gbps`). Benchmark-based directives and scoring require the hive to be started with `--benchmark`.
 
 ### Monitoring
 

@@ -72,6 +72,16 @@ parse_beemesh_directives(const std::string &content)
         {
             ls >> reqs.target_hostname;
         }
+        else if (key == "--min-gflops")
+        {
+            ls >> val;
+            reqs.min_gflops = std::stod(val);
+        }
+        else if (key == "--min-mem-bw")
+        {
+            ls >> val;
+            reqs.min_mem_bw_gbps = std::stod(val);
+        }
     }
 
     return reqs;
@@ -113,15 +123,19 @@ Launcher::run()
         data["requirements"] = nlohmann::json(reqs);
 
         if (!reqs.name.empty())
-            std::println("  name:   {}", reqs.name);
+            std::println("  name:        {}", reqs.name);
         if (reqs.min_cpus > 0)
-            std::println("  cpus:   >= {}", reqs.min_cpus);
+            std::println("  cpus:        >= {}", reqs.min_cpus);
         if (reqs.min_mem_mb > 0)
-            std::println("  mem:    >= {} MB", reqs.min_mem_mb);
+            std::println("  mem:         >= {} MB", reqs.min_mem_mb);
         if (reqs.requires_gpu)
-            std::println("  gpu:    required");
+            std::println("  gpu:         required");
         if (!reqs.target_hostname.empty())
-            std::println("  target: {}", reqs.target_hostname);
+            std::println("  target:      {}", reqs.target_hostname);
+        if (reqs.min_gflops > 0.0)
+            std::println("  min-gflops:  >= {:.2f}", reqs.min_gflops);
+        if (reqs.min_mem_bw_gbps > 0.0)
+            std::println("  min-mem-bw:  >= {:.2f} GB/s", reqs.min_mem_bw_gbps);
     }
 
     asio::io_context io;

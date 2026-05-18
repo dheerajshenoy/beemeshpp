@@ -417,7 +417,20 @@ bee_satisfies(const BeeEntry &bee, const JobRequirements &req)
     if (req.requires_gpu && !bee.has_gpu) return false;
     if (!req.target_hostname.empty() && bee.hostname != req.target_hostname)
         return false;
+    if (req.min_gflops > 0.0 && bee.benchmark.cpu_gflops < req.min_gflops)
+        return false;
+    if (req.min_mem_bw_gbps > 0.0
+        && bee.benchmark.mem_bandwidth_gbps < req.min_mem_bw_gbps)
+        return false;
     return true;
+}
+
+// Higher is better. When benchmark scores are all zero (no benchmark run),
+// every eligible bee scores 0 and the first one found is chosen.
+static double
+bee_score(const BeeEntry &bee)
+{
+    return bee.benchmark.cpu_gflops + bee.benchmark.mem_bandwidth_gbps;
 }
 
 void
@@ -426,27 +439,28 @@ Hive::assign_jobs_to_bees()
     std::lock_guard<std::mutex> jobs_lock(m_jobs_mutex);
     std::lock_guard<std::mutex> bees_lock(m_bees_mutex);
 
-    for (auto &entry : m_bees)
+    for (auto it = m_pending_jobs.begin(); it != m_pending_jobs.end(); )
     {
-        if (m_pending_jobs.empty())
-            break;
-        if (!entry.is_idle)
-            continue;
+        JobId job_id     = *it;
+        const auto &reqs = m_all_jobs.at(job_id)->requirements();
 
-        // Find the first pending job this bee can run.
-        auto it = std::find_if(
-            m_pending_jobs.begin(), m_pending_jobs.end(),
-            [&](JobId jid)
-            { return bee_satisfies(entry, m_all_jobs.at(jid)->requirements()); });
+        // Find the best idle bee for this job.
+        BeeEntry *best      = nullptr;
+        double    best_score = -1.0;
+        for (auto &entry : m_bees)
+        {
+            if (!entry.is_idle) continue;
+            if (!bee_satisfies(entry, reqs)) continue;
+            double s = bee_score(entry);
+            if (s > best_score) { best_score = s; best = &entry; }
+        }
 
-        if (it == m_pending_jobs.end())
-            continue;
+        if (!best) { ++it; continue; }
 
-        JobId job_id = *it;
-        m_pending_jobs.erase(it);
+        it = m_pending_jobs.erase(it);
+        auto &entry = *best;
 
         auto &job = m_all_jobs.at(job_id);
-        const auto &reqs = job->requirements();
 
         nlohmann::json msg;
         msg["type"] = Utils::to_string(MessageType::JOB_ASSIGNMENT);

@@ -23,6 +23,8 @@
 - Bees report real device info on registration (CPU model/cores/threads/arch, GPU vendor/name/VRAM, RAM, OS) using OS-level APIs (`/proc/cpuinfo`, `/sys/class/drm/`, `sysctlbyname` on macOS)
 - Monitor dashboard shows hostname and OS columns for each connected bee
 - Add optional benchmarking on bee registration (`beemesh hive --benchmark`); hive sends a `BENCHMARK_REQUEST` to each new bee, bee runs native C++ CPU (double-precision GFLOPS) and memory bandwidth (GB/s) benchmarks, results stored per bee and shown in the monitor detail panel; bees are held out of the job pool until benchmarking completes
+- Job dispatch selects the best eligible bee by benchmark score (`cpu_gflops + mem_bandwidth_gbps`) rather than first-available; falls back to first-available when benchmarking is disabled
+- Add `#BEEMESH --min-gflops` and `#BEEMESH --min-mem-bw` directives to filter bees by benchmark threshold; jobs stay queued until a bee meeting all requirements is available
 - Monitor table is interactive: navigate rows with `j`/`k` or arrow keys; press Enter to open a detail panel showing job output, exit code, and scrollable stdout/stderr
 - Track job exit codes end-to-end — bee extracts the real exit code from `pclose`, sends it with the result, hive stores and broadcasts it, monitor shows it per-bee in the table and detail panel (green for 0, red for non-zero)
 - MSVC compatibility: `_popen`/`_pclose` on Windows, `<windows.h>`/`<dxgi.h>` included for GPU/RAM/hostname APIs, `filesystem::permissions` guarded on non-Windows, MSVC compile flags and `dxgi` linkage added to CMake
