@@ -77,6 +77,10 @@ main(int argc, char *argv[])
         .nargs(1)
         .metavar("TOKEN");
 
+    hive_command.add_argument("--benchmark")
+        .help("Run a benchmark on each bee when it registers")
+        .flag();
+
     argparse::ArgumentParser bee_command("bee");
     bee_command.add_description(
         "Start BeeMesh in bee mode assigned by the hive");
@@ -145,8 +149,9 @@ main(int argc, char *argv[])
         std::string auth_token = hive_command.get<std::string>("--auth-token");
         std::string host       = hive_command.get<std::string>("--host");
         std::string port       = hive_command.get<std::string>("--port");
+        bool        benchmark  = hive_command.get<bool>("--benchmark");
 
-        Hive hive(auth_token, host, port);
+        Hive hive(auth_token, host, port, benchmark);
         hive.run();
     }
     else if (parser.is_subcommand_used("bee"))

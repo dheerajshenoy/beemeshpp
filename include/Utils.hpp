@@ -310,7 +310,7 @@ namespace Utils
         = {"bee_registration", "bee_id_assignment", "job_assignment",
            "job_result",       "status_update",     "status_check",
            "error_report",     "job_submission",    "monitor_connect",
-           "status_snapshot"};
+           "status_snapshot",  "benchmark_request", "benchmark_result"};
 
     inline std::string_view to_string(MessageType type)
     {

@@ -3,11 +3,16 @@
 #include "MessageType.hpp"
 #include "Utils.hpp"
 
+#include "BenchmarkResult.hpp"
+
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <print>
 #include <thread>
+#include <vector>
 
 #if !defined(_WIN32)
     #include <sys/wait.h>
@@ -84,6 +89,41 @@ Bee::resume_job()
         return;
 
     m_status = Status::Running;
+}
+
+static BenchmarkResult
+run_benchmarks()
+{
+    BenchmarkResult r;
+
+    // CPU: double-precision multiply-add loop
+    {
+        double a = 1.00001, b = 1.00002, c = 0.0;
+        const long N = 200'000'000L;
+        auto t0 = std::chrono::steady_clock::now();
+        for (long i = 0; i < N; ++i)
+            c = c * a + b;
+        auto t1 = std::chrono::steady_clock::now();
+        // prevent the loop being optimized away
+        if (c == 0.0) std::println("");
+        double secs   = std::chrono::duration<double>(t1 - t0).count();
+        r.cpu_gflops  = (2.0 * N) / (secs * 1e9);
+    }
+
+    // Memory bandwidth: large array copy (exceeds typical L3 cache)
+    {
+        const std::size_t N = 64ULL * 1024 * 1024; // 64M doubles = 512 MB
+        std::vector<double> src(N, 1.0), dst(N, 0.0);
+        auto t0 = std::chrono::steady_clock::now();
+        std::copy(src.begin(), src.end(), dst.begin());
+        auto t1 = std::chrono::steady_clock::now();
+        if (dst[0] == 0.0) std::println(""); // prevent elision
+        double secs           = std::chrono::duration<double>(t1 - t0).count();
+        // read + write = 2 * N * sizeof(double) bytes
+        r.mem_bandwidth_gbps  = (2.0 * N * sizeof(double)) / (secs * 1e9);
+    }
+
+    return r;
 }
 
 void
@@ -217,6 +257,32 @@ Bee::handle_message(const std::string &message)
                     });
                 }).detach();
 
+                break;
+            }
+
+            case MessageType::BENCHMARK_REQUEST:
+            {
+                std::println("Bee [id: {}] running benchmark…", m_id);
+                std::thread([this]()
+                {
+                    auto result = run_benchmarks();
+                    std::println("Bee [id: {}] benchmark done: {:.2f} GFLOPS, {:.1f} GB/s",
+                                 m_id, result.cpu_gflops, result.mem_bandwidth_gbps);
+                    asio::post(m_io_context, [this, result]()
+                    {
+                        nlohmann::json msg;
+                        msg["type"] = Utils::to_string(MessageType::BENCHMARK_RESULT);
+                        msg["data"] = nlohmann::json(result);
+                        asio::async_write(
+                            m_socket, asio::buffer(msg.dump() + MSG_DELIMITER),
+                            [](const std::error_code &ec, std::size_t)
+                            {
+                                if (ec)
+                                    std::cerr << "Error sending benchmark result: "
+                                              << ec.message() << "\n";
+                            });
+                    });
+                }).detach();
                 break;
             }
 

@@ -65,10 +65,16 @@ Monitor::connect_and_read()
                 for (const auto &bee : data.at("bees"))
                 {
                     BeeInfo info;
-                    info.id          = bee.at("id").get<uint64_t>();
-                    info.is_idle     = bee.at("is_idle").get<bool>();
-                    info.hostname    = bee.value("hostname", "");
-                    info.os          = bee.value("os", "");
+                    info.id              = bee.at("id").get<uint64_t>();
+                    info.is_idle         = bee.at("is_idle").get<bool>();
+                    info.is_benchmarking = bee.value("is_benchmarking", false);
+                    info.hostname        = bee.value("hostname", "");
+                    info.os              = bee.value("os", "");
+                    if (bee.contains("benchmark"))
+                    {
+                        info.cpu_gflops        = bee.at("benchmark").value("cpu_gflops", 0.0);
+                        info.mem_bandwidth_gbps= bee.at("benchmark").value("mem_bandwidth_gbps", 0.0);
+                    }
                     info.last_output = bee.value("last_output", "");
                     if (bee.contains("job_id"))
                         info.current_job = bee.at("job_id").get<uint64_t>();
@@ -173,10 +179,25 @@ Monitor::run()
             const auto &bee = snap.bees[selected];
 
             auto host = bee.hostname.empty() ? "unknown" : bee.hostname;
+            auto fmt_score = [](double v, const char *unit) -> std::string
+            {
+                if (v <= 0.0) return "-";
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%.2f %s", v, unit);
+                return buf;
+            };
+
             auto info = hbox({
                 text(" Bee #" + std::to_string(bee.id)) | bold,
                 text("  " + host) | color(Color::Cyan),
                 text("  " + bee.os) | color(Color::GrayDark),
+            });
+
+            auto bench_line = hbox({
+                text(" CPU  ") | bold,
+                text(fmt_score(bee.cpu_gflops, "GFLOPS")) | color(Color::Cyan),
+                text("   Mem  ") | bold,
+                text(fmt_score(bee.mem_bandwidth_gbps, "GB/s")) | color(Color::Cyan),
             });
 
             std::string job_label;
@@ -237,8 +258,9 @@ Monitor::run()
                 scroll_hint.empty() ? text("") : text(scroll_hint) | color(Color::GrayDark) | align_right,
             });
 
-            return vbox({title, separator(), info, separator(), job_line,
-                         separator(), output_box, separator(), hint})
+            return vbox({title, separator(), info, separator(), bench_line,
+                         separator(), job_line, separator(), output_box,
+                         separator(), hint})
                    | border;
         }
 
@@ -289,7 +311,23 @@ Monitor::run()
             for (int i = 0; i < n; ++i)
             {
                 const auto &bee       = snap.bees[i];
-                auto status_color     = bee.is_idle ? Color::Green : Color::Yellow;
+                Color status_color;
+                std::string status_str;
+                if (bee.is_benchmarking)
+                {
+                    status_color = Color::Cyan;
+                    status_str   = "bench";
+                }
+                else if (bee.is_idle)
+                {
+                    status_color = Color::Green;
+                    status_str   = "idle";
+                }
+                else
+                {
+                    status_color = Color::Yellow;
+                    status_str   = "busy";
+                }
                 std::string job_str = " -";
                 if (bee.current_job)
                 {
@@ -319,7 +357,7 @@ Monitor::run()
                      separator(),
                      text(" " + os + " ") | size(WIDTH, EQUAL, 10),
                      separator(),
-                     text(" " + std::string(bee.is_idle ? "idle" : "busy") + " ")
+                     text(" " + status_str + " ")
                          | color(status_color) | size(WIDTH, EQUAL, 10),
                      separator(),
                      text(job_str) | size(WIDTH, EQUAL, 14),

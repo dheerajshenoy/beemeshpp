@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bee.hpp"
+#include "BenchmarkResult.hpp"
 #include "Connection.hpp"
 #include "Job.hpp"
 
@@ -17,6 +18,7 @@ struct BeeEntry
     std::shared_ptr<Connection> conn;
     BeeId id{0};
     bool is_idle{true};
+    bool is_benchmarking{false};
     std::optional<JobId> current_job;
     std::string current_job_name;
     std::optional<std::chrono::system_clock::time_point> job_start_time;
@@ -25,6 +27,7 @@ struct BeeEntry
     unsigned cpu_cores{0};
     unsigned ram_mb{0};
     bool has_gpu{false};
+    BenchmarkResult benchmark;
     std::optional<JobId> last_completed_job;
     std::string last_job_output;
     std::optional<int> last_exit_code;
@@ -34,7 +37,7 @@ class Hive
 {
 public:
     Hive(const std::string &auth_token, const std::string &host,
-         const std::string &port);
+         const std::string &port, bool benchmark = false);
     ~Hive();
 
     void run();
@@ -48,6 +51,8 @@ private:
                       const nlohmann::json &data);
     void on_job_result(const std::shared_ptr<Connection> &conn,
                        const nlohmann::json &data);
+    void on_benchmark_result(const std::shared_ptr<Connection> &conn,
+                             const nlohmann::json &data);
     void on_bee_disconnect(const std::shared_ptr<Connection> &conn);
 
     void register_monitor(const std::shared_ptr<Connection> &conn);
@@ -64,6 +69,7 @@ private:
     std::string m_auth_token;
     std::string m_host;
     std::string m_port;
+    bool m_benchmark{false};
 
     std::vector<BeeEntry> m_bees;
     std::mutex m_bees_mutex;

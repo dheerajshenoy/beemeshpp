@@ -24,9 +24,12 @@ private:
     {
         uint64_t id;
         bool is_idle;
+        bool is_benchmarking{false};
         std::optional<uint64_t> current_job;
         std::string current_job_name;
         std::optional<int64_t> job_start_ms;
+        double cpu_gflops{0};
+        double mem_bandwidth_gbps{0};
         std::optional<uint64_t> last_job_id;
         std::optional<int> last_exit_code;
         std::string last_output;

@@ -1,5 +1,6 @@
 #include "Hive.hpp"
 
+#include "BenchmarkResult.hpp"
 #include "JobRequirements.hpp"
 #include "MessageType.hpp"
 #include "Utils.hpp"
@@ -13,9 +14,9 @@
 using tcp = asio::ip::tcp;
 
 Hive::Hive(const std::string &auth_token, const std::string &host,
-           const std::string &port)
+           const std::string &port, bool benchmark)
     : m_acceptor(m_io_context), m_auth_token(auth_token), m_host(host),
-      m_port(port)
+      m_port(port), m_benchmark(benchmark)
 {
     init_connection();
 }
@@ -106,6 +107,10 @@ Hive::handle_connection(asio::ip::tcp::socket socket)
                     on_job_result(conn, data);
                     break;
 
+                case MessageType::BENCHMARK_RESULT:
+                    on_benchmark_result(conn, data);
+                    break;
+
                 case MessageType::STATUS_UPDATE:
                     break;
 
@@ -168,21 +173,61 @@ Hive::register_bee(const std::shared_ptr<Connection> &conn,
     {
         std::lock_guard<std::mutex> lock(m_bees_mutex);
         BeeEntry entry;
-        entry.conn      = conn;
-        entry.id        = id;
-        entry.is_idle   = true;
-        entry.hostname  = hostname;
-        entry.os        = os;
-        entry.cpu_cores = cpu_cores;
-        entry.ram_mb    = ram_mb;
-        entry.has_gpu   = has_gpu;
+        entry.conn            = conn;
+        entry.id              = id;
+        entry.is_idle         = !m_benchmark;
+        entry.is_benchmarking = m_benchmark;
+        entry.hostname        = hostname;
+        entry.os              = os;
+        entry.cpu_cores       = cpu_cores;
+        entry.ram_mb          = ram_mb;
+        entry.has_gpu         = has_gpu;
         m_bees.push_back(std::move(entry));
     }
 
-    std::println("Bee {} registered ({})", id, hostname.empty() ? "unknown" : hostname);
-    asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    if (m_benchmark)
+    {
+        nlohmann::json bench_req;
+        bench_req["type"] = Utils::to_string(MessageType::BENCHMARK_REQUEST);
+        bench_req["data"] = nullptr;
+        conn->write(bench_req.dump() + "\n");
+        std::println("Bee {} registered ({}) — running benchmark", id,
+                     hostname.empty() ? "unknown" : hostname);
+    }
+    else
+    {
+        std::println("Bee {} registered ({})", id,
+                     hostname.empty() ? "unknown" : hostname);
+        asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    }
+
     asio::post(m_io_context, [this]() { broadcast_status(); });
     return true;
+}
+
+void
+Hive::on_benchmark_result(const std::shared_ptr<Connection> &conn,
+                          const nlohmann::json &data)
+{
+    auto result = data.get<BenchmarkResult>();
+
+    {
+        std::lock_guard<std::mutex> lock(m_bees_mutex);
+        for (auto &entry : m_bees)
+        {
+            if (entry.conn != conn)
+                continue;
+            entry.benchmark       = result;
+            entry.is_benchmarking = false;
+            entry.is_idle         = true;
+            std::println("Bee {} benchmark: {:.2f} GFLOPS, {:.1f} GB/s mem",
+                         entry.id, result.cpu_gflops, result.mem_bandwidth_gbps);
+            break;
+        }
+    }
+
+    asio::post(m_io_context, [this]() { assign_jobs_to_bees(); });
+    asio::post(m_io_context, [this]() { broadcast_status(); });
 }
 
 void
@@ -294,10 +339,12 @@ Hive::broadcast_status()
         for (const auto &entry : m_bees)
         {
             nlohmann::json bee;
-            bee["id"]       = entry.id;
-            bee["is_idle"]  = entry.is_idle;
-            bee["hostname"] = entry.hostname;
-            bee["os"]       = entry.os;
+            bee["id"]             = entry.id;
+            bee["is_idle"]        = entry.is_idle;
+            bee["is_benchmarking"]= entry.is_benchmarking;
+            bee["hostname"]       = entry.hostname;
+            bee["os"]             = entry.os;
+            bee["benchmark"]      = nlohmann::json(entry.benchmark);
             if (entry.current_job)
             {
                 bee["job_id"]   = *entry.current_job;
