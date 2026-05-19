@@ -2,6 +2,7 @@
 
 ## 0.1.1 [WIP]
 
+- Show useful message if hive is not running when trying to add a bee or launch a job
 - Add `--version` flag to print version and exit
 - Add `--help` flag to print usage information and exit
 - Show elapsed time for each job in the monitor dashboard

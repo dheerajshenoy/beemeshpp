@@ -21,8 +21,10 @@ Launcher::Launcher(const std::string &host, const std::string &port,
 static unsigned
 parse_mem_mb(const std::string &s)
 {
-    if (s.empty()) return 0;
-    char suffix = static_cast<char>(std::toupper(static_cast<unsigned char>(s.back())));
+    if (s.empty())
+        return 0;
+    char suffix
+        = static_cast<char>(std::toupper(static_cast<unsigned char>(s.back())));
     unsigned val = static_cast<unsigned>(std::stoul(
         (suffix == 'G' || suffix == 'M') ? s.substr(0, s.size() - 1) : s));
     return (suffix == 'G') ? val * 1024 : val;
@@ -141,7 +143,15 @@ Launcher::run()
     asio::io_context io;
     asio::ip::tcp::socket socket(io);
     asio::ip::tcp::resolver resolver(io);
-    asio::connect(socket, resolver.resolve(m_host, m_port));
+    try
+    {
+        asio::connect(socket, resolver.resolve(m_host, m_port));
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Failed to connect to server: " << e.what() << std::endl;
+        exit(1);
+    }
 
     nlohmann::json msg;
     msg["type"] = Utils::to_string(MessageType::JOB_SUBMISSION);
