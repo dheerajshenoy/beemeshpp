@@ -13,10 +13,7 @@ main(int argc, char *argv[])
                                     argparse::default_arguments::none);
 
     parser.add_argument("--version").help("Print version").flag();
-
-    parser.add_argument("-v", "--verbose")
-        .help("Increase output verbosity")
-        .flag();
+    parser.add_argument("-h", "--help").help("Print this help").flag();
 
     argparse::ArgumentParser monitor_command("monitor");
     monitor_command.add_description(
@@ -130,6 +127,12 @@ main(int argc, char *argv[])
     if (parser.is_used("--version"))
     {
         std::println("BeeMesh version {}", BEEMESH_VERSION);
+        return 0;
+    }
+
+    if (parser.is_used("--help"))
+    {
+        std::println("{}", parser.help().str());
         return 0;
     }
 
