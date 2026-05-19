@@ -2,6 +2,7 @@
 
 ## 0.1.1 [WIP]
 
+- Add `--version` flag to print version and exit
 - Show elapsed time for each job in the monitor dashboard
 - Add `launch` subcommand to submit jobs to the hive from any machine; supports shell commands and local files:
   ```bash
