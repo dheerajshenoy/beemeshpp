@@ -7,7 +7,7 @@ A distributed task execution system where a central **hive** receives jobs and d
 # Why ?
 
 - **Distributed Computing**: BeeMesh enables users to harness the power of multiple machines for parallel task execution,
-  making it ideal for workloads that can be distributed across nodes.
+  making it ideal for workloads that can be distributed across nodes. [Work In Progress for BeeMesh++]
 
 - **Resource Management**: The hive can manage and allocate resources efficiently, ensuring that jobs are executed on
   suitable bees based on their capabilities and current load.
