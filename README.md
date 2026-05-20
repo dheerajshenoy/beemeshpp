@@ -1,5 +1,6 @@
 # beemeshpp
-BeeMesh implementation in C++
+
+[BeeMesh](https://github.com/dhanushenoy/beemesh) implementation in C++
 
 A distributed task execution system where a central **hive** receives jobs and dispatches them to connected **bee** nodes across the network.
 
