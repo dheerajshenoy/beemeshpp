@@ -4,6 +4,22 @@
 
 A distributed task execution system where a central **hive** receives jobs and dispatches them to connected **bee** nodes across the network.
 
+# Why ?
+
+- **Distributed Computing**: BeeMesh enables users to harness the power of multiple machines for parallel task execution,
+  making it ideal for workloads that can be distributed across nodes.
+
+- **Resource Management**: The hive can manage and allocate resources efficiently, ensuring that jobs are executed on
+  suitable bees based on their capabilities and current load.
+
+- **Scalability**: As the workload increases, more bees can be added to the network, allowing for seamless scaling of computational resources.
+
+- **Flexibility**: Users can submit a wide variety of jobs, from simple shell commands to complex scripts, and the system will handle the distribution and
+  execution across the network.
+
+- **Monitoring**: The built-in monitoring dashboard provides real-time insights into the status of bees and jobs, allowing users to track progress and troubleshoot
+  issues effectively.
+
 ## Building and Running
 
 ```bash
